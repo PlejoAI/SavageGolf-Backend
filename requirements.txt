@@ -8,3 +8,4 @@ requests
 opencv-python-headless
 mediapipe
 numpy
+protobuf<4.0.0
