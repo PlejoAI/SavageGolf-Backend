@@ -68,8 +68,8 @@ def process_skeleton(video_path):
     on every frame. Returns the path to the newly rendered video, along with 
     a dictionary of timestamps for the detected mistakes.
     """
-    mp_drawing = mp.solutions.drawing_utils
-    mp_pose = mp.solutions.pose
+    import mediapipe.python.solutions.drawing_utils as mp_drawing
+    import mediapipe.python.solutions.pose as mp_pose
     
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
