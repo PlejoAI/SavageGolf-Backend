@@ -2,9 +2,11 @@ services:
   - type: web
     name: savage-golf-api
     env: python
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install -r requirements.txt && pip uninstall -y opencv-python opencv-contrib-python && pip install opencv-python-headless opencv-contrib-python-headless"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
       - key: GEMINI_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
