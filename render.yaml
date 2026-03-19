@@ -2,7 +2,7 @@ services:
   - type: web
     name: savage-golf-api
     env: python
-    buildCommand: "pip install --upgrade pip setuptools wheel && pip install -r requirements.txt && pip uninstall -y opencv-python opencv-contrib-python && pip install opencv-python-headless opencv-contrib-python-headless"
+    buildCommand: "pip install --upgrade pip wheel && pip install -r requirements.txt && pip uninstall -y opencv-contrib-python || true && pip install opencv-contrib-python-headless"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
@@ -10,6 +10,4 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: ELEVENLABS_API_KEY
         sync: false
