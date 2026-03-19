@@ -2,7 +2,7 @@ services:
   - type: web
     name: savage-golf-api
     env: python
-    buildCommand: "pip install --upgrade pip wheel && pip install -r requirements.txt && pip uninstall -y opencv-contrib-python || true && pip install opencv-contrib-python-headless"
+    buildCommand: "pip install --upgrade pip wheel && pip install -r requirements.txt"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
