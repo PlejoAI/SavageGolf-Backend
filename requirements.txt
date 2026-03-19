@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+google-generativeai
+python-multipart
+python-dotenv
+stripe
+requests
+opencv-python-headless
+mediapipe
+numpy
