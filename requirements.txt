@@ -6,6 +6,6 @@ python-dotenv
 stripe
 requests
 opencv-python-headless
-mediapipe
+mediapipe==0.10.13
 numpy
-protobuf<4.0.0
+protobuf==3.20.3
