@@ -78,6 +78,11 @@ def process_skeleton(video_path):
     # Get video properties for output
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # H.264/MPEG-4 strictly requires EVEN dimensions
+    if width % 2 != 0: width -= 1
+    if height % 2 != 0: height -= 1
+    
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     
     # 🏎️ PERFORMANCE BOOST: Limit max processing FPS to 15.
@@ -88,7 +93,7 @@ def process_skeleton(video_path):
     output_path = video_path.replace('.mp4', '_skeleton.mp4')
     
     # Use standard avc1 (H.264) codec so iOS natively plays it without fighting us
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, process_fps, (width, height))
 
     detected_errors = {
