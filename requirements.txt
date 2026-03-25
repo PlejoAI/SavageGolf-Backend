@@ -7,4 +7,5 @@ stripe
 requests
 opencv-python-headless
 mediapipe
+protobuf<5
 numpy
