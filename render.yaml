@@ -7,5 +7,5 @@ services:
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
-      - key: ELEVENLABS_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
