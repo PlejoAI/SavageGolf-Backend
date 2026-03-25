@@ -300,7 +300,8 @@ async def analyze_swing(video: UploadFile = File(...)):
         6. 'personalized_training_plan': array of 2 objects. Each must have 'drill_name', 'location' (Driving Range / Living Room), 'how_to_do_it' (2 quick steps), and 'what_to_feel' (a highly specific, exaggerated physical sensation they must focus on during the drill).
         7. 'savage_mode': A 2-sentence verdict. Sentence 1: A witty, punchy roast of their swing. Sentence 2: A clear, educational explanation of exactly what they did wrong biomechanically so they actually learn how to fix it.
         """
-
+        CRITICAL: Never use double quotes (") inside your string values, use single quotes (') instead so you do not break the JSON format.
+                                           
         # Using gemini-3-flash-preview for video capabilities
         model = genai.GenerativeModel('models/gemini-3-flash-preview')
         response = model.generate_content(
@@ -316,9 +317,18 @@ async def analyze_swing(video: UploadFile = File(...)):
         # 5. Parse and return the JSON
         raw_text = response.text
         if raw_text.startswith("```json"):
-            raw_text = raw_text.replace("```json\n", "").replace("```", "")
+            raw_text = raw_text.replace("```json\n", "", 1)
+        if raw_text.endswith("```\n"):
+            raw_text = raw_text[:-4]
+        elif raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
         
-        analysis_data = json.loads(raw_text.strip())
+        try:
+            analysis_data = json.loads(raw_text.strip())
+        except Exception:
+            import re
+            match = re.search(r'\{.*\}', raw_text.strip(), re.DOTALL)
+            analysis_data = json.loads(match.group(0))
         
         # If Gemini returned a list of 1 object instead of an object, extract it
         if isinstance(analysis_data, list):
