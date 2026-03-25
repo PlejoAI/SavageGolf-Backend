@@ -299,8 +299,8 @@ async def analyze_swing(video: UploadFile = File(...)):
         5. 'the_critical_flaw': the biggest issue.
         6. 'personalized_training_plan': array of 2 objects. Each must have 'drill_name', 'location' (Driving Range / Living Room), 'how_to_do_it' (2 quick steps), and 'what_to_feel' (a highly specific, exaggerated physical sensation they must focus on during the drill).
         7. 'savage_mode': A 2-sentence verdict. Sentence 1: A witty, punchy roast of their swing. Sentence 2: A clear, educational explanation of exactly what they did wrong biomechanically so they actually learn how to fix it.
+        CRITICAL: Never use double quotes (") inside your string values, use single quotes (') instead so you do not break the JSON format.        
         """
-        CRITICAL: Never use double quotes (") inside your string values, use single quotes (') instead so you do not break the JSON format.
                                            
         # Using gemini-3-flash-preview for video capabilities
         model = genai.GenerativeModel('models/gemini-3-flash-preview')
