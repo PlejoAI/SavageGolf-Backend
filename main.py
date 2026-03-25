@@ -237,6 +237,10 @@ def process_skeleton(video_path):
                 except Exception as e:
                     pass
             
+            # Ensure frame size strictly matches VideoWriter dims
+            if image.shape[0] != height or image.shape[1] != width:
+                image = cv2.resize(image, (width, height))
+                
             out.write(image)
 
     cap.release()
