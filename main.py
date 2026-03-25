@@ -41,7 +41,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import os
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -69,9 +68,8 @@ def process_skeleton(video_path):
     on every frame. Returns the path to the newly rendered video, along with 
     a dictionary of timestamps for the detected mistakes.
     """
-    import mediapipe as mp
-    import mediapipe.python.solutions.drawing_utils as mp_drawing
-    import mediapipe.python.solutions.pose as mp_pose
+    mp_drawing = mp.solutions.drawing_utils
+    mp_pose = mp.solutions.pose
     
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
