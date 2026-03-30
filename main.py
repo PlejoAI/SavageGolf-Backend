@@ -64,8 +64,6 @@ def calculate_angle(a, b, c):
 
 def process_skeleton(video_path):
     """
-    def process_skeleton(video_path):
-    """
     Runs MediaPipe Pose detection over the video to draw a biometric skeleton
     and coaching lines on frames where a golfer is detected.
     Returns:
