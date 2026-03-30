@@ -78,11 +78,6 @@ def process_skeleton(video_path):
     # Get video properties for output
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # H.264/MPEG-4 strictly requires EVEN dimensions
-    if width % 2 != 0: width -= 1
-    if height % 2 != 0: height -= 1
-    
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     
     # 🏎️ PERFORMANCE BOOST: Limit max processing FPS to 15.
@@ -93,7 +88,7 @@ def process_skeleton(video_path):
     output_path = video_path.replace('.mp4', '_skeleton.mp4')
     
     # Use standard avc1 (H.264) codec so iOS natively plays it without fighting us
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fourcc = cv2.VideoWriter_fourcc(*'avc1')
     out = cv2.VideoWriter(output_path, fourcc, process_fps, (width, height))
 
     detected_errors = {
@@ -237,10 +232,6 @@ def process_skeleton(video_path):
                 except Exception as e:
                     pass
             
-            # Ensure frame size strictly matches VideoWriter dims
-            if image.shape[0] != height or image.shape[1] != width:
-                image = cv2.resize(image, (width, height))
-                
             out.write(image)
 
     cap.release()
@@ -299,9 +290,12 @@ async def analyze_swing(video: UploadFile = File(...)):
         5. 'the_critical_flaw': the biggest issue.
         6. 'personalized_training_plan': array of 2 objects. Each must have 'drill_name', 'location' (Driving Range / Living Room), 'how_to_do_it' (2 quick steps), and 'what_to_feel' (a highly specific, exaggerated physical sensation they must focus on during the drill).
         7. 'savage_mode': A 2-sentence verdict. Sentence 1: A witty, punchy roast of their swing. Sentence 2: A clear, educational explanation of exactly what they did wrong biomechanically so they actually learn how to fix it.
-        CRITICAL: Never use double quotes (") inside your string values, use single quotes (') instead so you do not break the JSON format.        
+        8. 'fitness_prescription': array of 2-3 objects to fix their physical limitations. Each must have 'exercise_name', 'sets_and_reps', and 'why_it_helps'.
+        9. 'physical_diagnosis': A witty, brutal explanation of the physical limitation in their body that caused the swing flaw (e.g. tight hips, weak core).
+        
+        CRITICAL: Never use double quotes (") inside your string values, use single quotes (') instead so you do not break the JSON format.
         """
-                                           
+
         # Using gemini-3-flash-preview for video capabilities
         model = genai.GenerativeModel('models/gemini-3-flash-preview')
         response = model.generate_content(
@@ -325,10 +319,14 @@ async def analyze_swing(video: UploadFile = File(...)):
         
         try:
             analysis_data = json.loads(raw_text.strip())
-        except Exception:
+        except json.JSONDecodeError as jde:
+            # Fallback regex extraction if json loads fails
             import re
             match = re.search(r'\{.*\}', raw_text.strip(), re.DOTALL)
-            analysis_data = json.loads(match.group(0))
+            if match:
+                analysis_data = json.loads(match.group(0))
+            else:
+                raise ValueError(f"JSON Parse Error: {jde}. Raw text: {raw_text[:200]}...")
         
         # If Gemini returned a list of 1 object instead of an object, extract it
         if isinstance(analysis_data, list):
@@ -372,7 +370,7 @@ async def stripe_webhook(request: Request):
 
 class AudioRequest(BaseModel):
     text: str
-    # Using 'onyx' from OpenAI (sounds arrogant and professional)
+    # Using 'onyx' from OpenAI
     voice_id: str = "onyx" 
 
 @app.post("/api/generate-roast-audio")
