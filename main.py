@@ -265,11 +265,21 @@ async def analyze_swing(video: UploadFile = File(...)):
             f.write(content)
 
         # 1.5 Draw Biometric Skeleton via MediaPipe
-        print("Rendering biometric skeleton overlay...")
-        skeleton_video_path = process_skeleton(temp_video_path)
+        print("Attempting to render biometric skeleton overlay...")
+        skeleton_video_path = temp_video_path # Fallback to original
+        
+        try:
+            processed_path = process_skeleton(temp_video_path)
+            if os.path.exists(processed_path):
+                skeleton_video_path = processed_path
+                print("Skeleton rendering successful!")
+            else:
+                print("OpenCV failed to save the skeleton file. Using original video.")
+        except Exception as e:
+            print(f"Skeleton rendering crashed: {e}. Using original video.")
 
         # 2. Upload to Gemini File API
-        print(f"Uploading skeleton video to Gemini...")
+        print(f"Uploading video to Gemini...")
         gemini_file = genai.upload_file(path=skeleton_video_path)
         
         # Wait for the file to be processed
