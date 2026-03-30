@@ -64,10 +64,14 @@ def calculate_angle(a, b, c):
 
 def process_skeleton(video_path):
     """
-    Runs MediaPipe Pose detection over the video to draw a biometric skeleton
-    and coaching lines on frames where a golfer is detected.
+    Runs MediaPipe Pose detection over the video and burns in:
+    - full-body skeleton
+    - head level line
+    - tush line
+    - diagnostic labels
+
     Returns:
-      output_path, overlay_found
+      (output_path, overlay_found)
     """
     mp_drawing = mp.solutions.drawing_utils
     mp_pose = mp.solutions.pose
@@ -86,10 +90,10 @@ def process_skeleton(video_path):
     process_fps = min(float(fps), 15.0)
     frame_skip_ratio = max(1, round(float(fps) / process_fps))
 
-    output_path = video_path.replace('.mp4', '_skeleton.mp4')
+    output_path = video_path.replace(".mp4", "_skeleton.mp4")
 
-    # iPhone-safe attempt
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    # More reliable in hosted environments than avc1
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(output_path, fourcc, process_fps, (width, height))
 
     if not out.isOpened():
@@ -97,25 +101,21 @@ def process_skeleton(video_path):
 
     overlay_found = False
     pose_frames_detected = 0
-    detected_errors = {
-        "chicken_wing_ms": [],
-        "posture_loss_ms": []
-    }
-    
-    # NEW: Hand Path Tracking for Swing Plane Visualizer
-    hand_path_history = []
-    
-    # Biometric Reference Lines
+    frame_count = 0
+
+    # Stable reference lines
     initial_butt_x = None
     initial_head_y = None
+    stance_direction = None # "left" or "right"
 
-    frame_count = 0
     with mp_pose.Pose(
         static_image_mode=False,
-        model_complexity=1,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
+        model_complexity=2,
+        smooth_landmarks=True,
+        min_detection_confidence=0.45,
+        min_tracking_confidence=0.45
     ) as pose:
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -124,128 +124,236 @@ def process_skeleton(video_path):
             frame_count += 1
 
             if frame_count % frame_skip_ratio != 0:
-                continue   
-                
-            current_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
-            
-            # Recolor to RGB for MediaPipe
-            image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            image.flags.writeable = False
-            
-            results = pose.process(image)
-            
-            # Recolor back to BGR for OpenCV
-            image.flags.writeable = True
-            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-            
+                continue
+
+            # Resize protection in case source metadata is weird
+            if frame.shape[1] != width or frame.shape[0] != height:
+                frame = cv2.resize(frame, (width, height))
+
+            # Convert to RGB for MediaPipe
+            image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            image_rgb.flags.writeable = False
+            results = pose.process(image_rgb)
+            image_rgb.flags.writeable = True
+
+            # Back to BGR for OpenCV
+            image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+
+            # Always stamp overlay watermark so we know processed video is playing
+            cv2.putText(
+                image,
+                "BREAKING 90 AI OVERLAY",
+                (30, 45),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 0, 0),
+                5,
+                cv2.LINE_AA
+            )
+            cv2.putText(
+                image,
+                "BREAKING 90 AI OVERLAY",
+                (30, 45),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 255, 102),
+                2,
+                cv2.LINE_AA
+            )
+
             if results.pose_landmarks:
                 pose_frames_detected += 1
                 overlay_found = True
-                mp_drawing.draw_landmarks(
-                    image, 
-                    results.pose_landmarks, 
-                    mp_pose.POSE_CONNECTIONS,
-                    mp_drawing.DrawingSpec(color=(0, 255, 102), thickness=4, circle_radius=4), # Neon Green
-                    mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=2, circle_radius=2)  # White joints
-                )
-                
-                # Biometric Error Tracking Math
+
                 try:
                     landmarks = results.pose_landmarks.landmark
-                    
-                    # Track Lead Arm (Left Arm for Right-Handed Golfer)
-                    l_sh = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-                    l_el = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-                    l_wr = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
-                    
-                    arm_angle = calculate_angle(l_sh, l_el, l_wr)
-                    
-                    # Convert to pixel coordinates for OpenCV drawing
                     h, w, _ = image.shape
-                    shoulder_px = tuple(np.multiply(l_sh, [w, h]).astype(int))
-                    elbow_px = tuple(np.multiply(l_el, [w, h]).astype(int))
-                    wrist_px = tuple(np.multiply(l_wr, [w, h]).astype(int))
-                    
-                    # Early Extension tracking (Hips moving towards the ball too early)
-                    l_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-                    l_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-                    
-                    spine_angle = calculate_angle(l_sh, l_hip, l_knee)
-                    
-                    # Tush Line & Head Box Logic
-                    nose = [landmarks[mp_pose.PoseLandmark.NOSE.value].x, landmarks[mp_pose.PoseLandmark.NOSE.value].y]
-                    r_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-                    l_wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
-                    
+
+                    # Draw bold premium skeleton
+                    mp_drawing.draw_landmarks(
+                        image,
+                        results.pose_landmarks,
+                        mp_pose.POSE_CONNECTIONS,
+                        mp_drawing.DrawingSpec(color=(0, 255, 102), thickness=6, circle_radius=5),
+                        mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=3, circle_radius=3)
+                    )
+
+                    # Key landmarks
+                    nose = landmarks[mp_pose.PoseLandmark.NOSE.value]
+                    l_sh = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+                    r_sh = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
+                    l_el = landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value]
+                    l_wr = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value]
+                    l_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value]
+                    r_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value]
+                    l_knee = landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value]
+                    r_knee = landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value]
+
+                    # Convert to pixel coordinates
+                    l_sh_px = tuple(np.multiply([l_sh.x, l_sh.y], [w, h]).astype(int))
+                    l_el_px = tuple(np.multiply([l_el.x, l_el.y], [w, h]).astype(int))
+                    l_wr_px = tuple(np.multiply([l_wr.x, l_wr.y], [w, h]).astype(int))
+                    l_hip_px = tuple(np.multiply([l_hip.x, l_hip.y], [w, h]).astype(int))
+                    r_hip_px = tuple(np.multiply([r_hip.x, r_hip.y], [w, h]).astype(int))
+                    nose_px = tuple(np.multiply([nose.x, nose.y], [w, h]).astype(int))
+
+                    # Angles
+                    arm_angle = calculate_angle(
+                        [l_sh.x, l_sh.y],
+                        [l_el.x, l_el.y],
+                        [l_wr.x, l_wr.y]
+                    )
+
+                    spine_angle = calculate_angle(
+                        [l_sh.x, l_sh.y],
+                        [l_hip.x, l_hip.y],
+                        [l_knee.x, l_knee.y]
+                    )
+
+                    # Determine golfer direction once from hand/hip relationship
+                    if stance_direction is None:
+                        hands_x = l_wr.x
+                        hips_x = (l_hip.x + r_hip.x) / 2.0
+                        stance_direction = "right" if hands_x > hips_x else "left"
+
+                    # Stable head/tush reference setup
                     if initial_butt_x is None or initial_head_y is None:
-                        # Dynamic sizing based on the golfer's body proportions, not the frame size!
-                        # Calculate torso length as a reference unit
-                        torso_len_y = abs(l_sh[1] - l_hip[1])
-                        
-                        # Head offset: Top of head is roughly 30% of torso length above the nose
-                        head_offset = torso_len_y * 0.3 * h
-                        
-                        # Glute offset: Back of glutes is roughly 30% of torso length behind the hip joint
-                        glute_offset = torso_len_y * 0.3 * w
-                        
+                        torso_len = abs(l_sh.y - l_hip.y)
+                        torso_len = max(torso_len, 0.08)
+
+                        head_offset_px = int(torso_len * h * 0.38)
+                        glute_offset_px = int(torso_len * w * 0.32)
+
                         if initial_butt_x is None:
-                            hands_x = l_wrist[0]
-                            hips_x = (l_hip[0] + r_hip[0]) / 2.0
-                            
-                            if hands_x > hips_x:
-                                # Facing right. Butt is on the left.
-                                butt_x = min(l_hip[0], r_hip[0]) * w - glute_offset
+                            if stance_direction == "right":
+                                butt_x = min(l_hip.x, r_hip.x) * w - glute_offset_px
                             else:
-                                # Facing left. Butt is on the right.
-                                butt_x = max(l_hip[0], r_hip[0]) * w + glute_offset
-                                
+                                butt_x = max(l_hip.x, r_hip.x) * w + glute_offset_px
                             initial_butt_x = int(butt_x)
-                            
+
                         if initial_head_y is None:
-                            head_top_y = (nose[1] * h) - head_offset
-                            initial_head_y = int(head_top_y)
-                        
-                    # Draw Tush Line (Vertical line at initial butt position)
-                    if initial_butt_x is not None:
-                        cv2.line(image, (initial_butt_x, 0), (initial_butt_x, h), (0, 255, 255), 2) # Yellow line
-                        cv2.putText(image, "TUSH LINE", (initial_butt_x - 100, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
-                        cv2.putText(image, "TUSH LINE", (initial_butt_x - 100, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+                            initial_head_y = int((nose.y * h) - head_offset_px)
 
-                    # Draw Head Height Line (Horizontal line at initial head position)
+                    # Draw head level line
                     if initial_head_y is not None:
-                        cv2.line(image, (0, initial_head_y - 20), (w, initial_head_y - 20), (255, 165, 0), 2) # Orange line
-                        cv2.putText(image, "HEAD LEVEL", (50, initial_head_y - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
-                        cv2.putText(image, "HEAD LEVEL", (50, initial_head_y - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 1)
+                        head_line_y = max(20, min(h - 20, initial_head_y))
+                        cv2.line(image, (0, head_line_y), (w, head_line_y), (0, 140, 255), 4)
+                        cv2.putText(
+                            image,
+                            "HEAD LINE",
+                            (40, max(40, head_line_y - 15)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.9,
+                            (0, 0, 0),
+                            4,
+                            cv2.LINE_AA
+                        )
+                        cv2.putText(
+                            image,
+                            "HEAD LINE",
+                            (40, max(40, head_line_y - 15)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.9,
+                            (0, 140, 255),
+                            2,
+                            cv2.LINE_AA
+                        )
 
-                    # 1. Chicken Wing Check (Lead arm bending too much)
-                    if arm_angle < 135: 
-                        # Sleek Red Reticle on the joint
-                        cv2.circle(image, elbow_px, 6, (0, 0, 255), -1) # Small Red Center
-                        cv2.circle(image, elbow_px, 14, (0, 0, 255), 2) # Red Outer Ring
-                        cv2.line(image, shoulder_px, elbow_px, (0, 0, 255), 4) # Thinner, sleeker bone line
-                        cv2.line(image, elbow_px, wrist_px, (0, 0, 255), 4)
-                        
-                        # Burn the text right next to the elbow (with a black drop shadow for readability)
-                        text_pos = (elbow_px[0] + 25, elbow_px[1] + 5)
-                        cv2.putText(image, "CHICKEN WING", text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3, cv2.LINE_AA)
-                        cv2.putText(image, "CHICKEN WING", text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1, cv2.LINE_AA)
-                                   
-                    # 2. Early Extension / Posture Loss Check (Spine standing up too straight)
-                    if spine_angle > 170:
-                        hip_px = tuple(np.multiply(l_hip, [w, h]).astype(int))
-                        
-                        # Sleek Red Reticle on the hip
-                        cv2.circle(image, hip_px, 6, (0, 0, 255), -1)
-                        cv2.circle(image, hip_px, 14, (0, 0, 255), 2)
-                        
-                        # Burn the text right next to the hip
-                        text_pos2 = (hip_px[0] + 25, hip_px[1] + 5)
-                        cv2.putText(image, "POSTURE LOSS", text_pos2, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3, cv2.LINE_AA)
-                        cv2.putText(image, "POSTURE LOSS", text_pos2, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1, cv2.LINE_AA)
+                    # Draw tush line
+                    if initial_butt_x is not None:
+                        butt_line_x = max(20, min(w - 20, initial_butt_x))
+                        cv2.line(image, (butt_line_x, 0), (butt_line_x, h), (0, 255, 255), 4)
+                        label_x = butt_line_x - 160 if butt_line_x > w // 2 else butt_line_x + 20
+                        label_x = max(20, min(w - 220, label_x))
 
-                except Exception as e:
-                    pass
-            
+                        cv2.putText(
+                            image,
+                            "TUSH LINE",
+                            (label_x, h - 40),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.9,
+                            (0, 0, 0),
+                            4,
+                            cv2.LINE_AA
+                        )
+                        cv2.putText(
+                            image,
+                            "TUSH LINE",
+                            (label_x, h - 40),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.9,
+                            (0, 255, 255),
+                            2,
+                            cv2.LINE_AA
+                        )
+
+                    # Chicken wing visual
+                    if arm_angle < 145:
+                        cv2.circle(image, l_el_px, 10, (0, 0, 255), -1)
+                        cv2.circle(image, l_el_px, 22, (0, 0, 255), 3)
+                        cv2.line(image, l_sh_px, l_el_px, (0, 0, 255), 6)
+                        cv2.line(image, l_el_px, l_wr_px, (0, 0, 255), 6)
+
+                        text_pos = (l_el_px[0] + 25, l_el_px[1] - 10)
+                        cv2.putText(
+                            image,
+                            "CHICKEN WING",
+                            text_pos,
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.85,
+                            (0, 0, 0),
+                            4,
+                            cv2.LINE_AA
+                        )
+                        cv2.putText(
+                            image,
+                            "CHICKEN WING",
+                            text_pos,
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.85,
+                            (0, 0, 255),
+                            2,
+                            cv2.LINE_AA
+                        )
+
+                    # Posture loss visual
+                    if spine_angle > 168:
+                        hip_mid_px = (
+                            int((l_hip_px[0] + r_hip_px[0]) / 2),
+                            int((l_hip_px[1] + r_hip_px[1]) / 2)
+                        )
+
+                        cv2.circle(image, hip_mid_px, 10, (255, 80, 80), -1)
+                        cv2.circle(image, hip_mid_px, 22, (255, 80, 80), 3)
+
+                        text_pos2 = (hip_mid_px[0] + 25, hip_mid_px[1] - 10)
+                        cv2.putText(
+                            image,
+                            "POSTURE LOSS",
+                            text_pos2,
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.85,
+                            (0, 0, 0),
+                            4,
+                            cv2.LINE_AA
+                        )
+                        cv2.putText(
+                            image,
+                            "POSTURE LOSS",
+                            text_pos2,
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.85,
+                            (255, 80, 80),
+                            2,
+                            cv2.LINE_AA
+                        )
+
+                    # Nose marker for head tracking visibility
+                    cv2.circle(image, nose_px, 8, (0, 140, 255), -1)
+
+                except Exception as draw_error:
+                    print(f"Overlay drawing error: {draw_error}")
+
             out.write(image)
 
     cap.release()
