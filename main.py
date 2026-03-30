@@ -124,7 +124,8 @@ def process_skeleton(video_path):
             frame_count += 1
 
             if frame_count % frame_skip_ratio != 0:
-                continue                
+                continue   
+                
             current_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
             
             # Recolor to RGB for MediaPipe
@@ -139,7 +140,8 @@ def process_skeleton(video_path):
             
             if results.pose_landmarks:
                 pose_frames_detected += 1
-                overlay_found = True                mp_drawing.draw_landmarks(
+                overlay_found = True
+                mp_drawing.draw_landmarks(
                     image, 
                     results.pose_landmarks, 
                     mp_pose.POSE_CONNECTIONS,
@@ -264,6 +266,7 @@ def process_skeleton(video_path):
         return None, False
 
     return output_path, True
+    
 @app.post("/api/analyze-swing")
 async def analyze_swing(video: UploadFile = File(...)):
     """
@@ -313,6 +316,7 @@ async def analyze_swing(video: UploadFile = File(...)):
         except Exception as e:
             print(f"Skeleton rendering crashed: {e}. Using original video.")
             skeleton_video_path = temp_video_path
+            
             # 2. Upload to Gemini File API
         print(f"Uploading video to Gemini...")
         gemini_file = genai.upload_file(path=skeleton_video_path)
