@@ -249,7 +249,12 @@ async def analyze_swing(video: UploadFile = File(...)):
 
     try:
         import time
+        import os
         
+        # CRITICAL FIX: Ensure static directory exists
+        if not os.path.exists("static"):
+            os.makedirs("static", exist_ok=True)
+            
         # Create a unique ID for this video
         file_id = str(uuid.uuid4())
         temp_video_path = f"static/{file_id}.mp4"
