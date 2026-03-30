@@ -268,18 +268,26 @@ async def analyze_swing(video: UploadFile = File(...)):
 
         # 1.5 Draw Biometric Skeleton via MediaPipe
         print("Attempting to render biometric skeleton overlay...")
-        skeleton_video_path = temp_video_path # Fallback to original
-        
+        skeleton_video_path = temp_video_path # Default fallback is original upload
+        use_processed_video = False
+
         try:
             processed_path = process_skeleton(temp_video_path)
-            if os.path.exists(processed_path):
+
+            if (
+                processed_path
+                and os.path.exists(processed_path)
+                and os.path.getsize(processed_path) > 1024
+            ):
                 skeleton_video_path = processed_path
-                print("Skeleton rendering successful!")
+                use_processed_video = True
+                print(f"Skeleton rendering successful: {processed_path}")
             else:
-                print("OpenCV failed to save the skeleton file. Using original video.")
+                print("Processed skeleton video missing or too small. Using original video.")
+
         except Exception as e:
             print(f"Skeleton rendering crashed: {e}. Using original video.")
-
+            skeleton_video_path = temp_video_path
         # 2. Upload to Gemini File API
         print(f"Uploading video to Gemini...")
         gemini_file = genai.upload_file(path=skeleton_video_path)
@@ -320,11 +328,16 @@ async def analyze_swing(video: UploadFile = File(...)):
             generation_config={"response_mime_type": "application/json"}
         )
 
-        # 4. Clean up the original file & Gemini file
-        os.remove(temp_video_path)
+        # 4. Clean up Gemini file
         genai.delete_file(gemini_file.name)
-        # We DO NOT delete final_video_path because we want to serve it to the app!
 
+        # Only delete the original upload if we have a valid processed file to serve.
+        # Otherwise keep the original so the app has a playable fallback video.
+        if use_processed_video:
+            try:
+                os.remove(temp_video_path)
+            except Exception as cleanup_error:
+                print(f"Warning: could not delete original temp video: {cleanup_error}")
         # 5. Parse and return the JSON
         raw_text = response.text
         if raw_text.startswith("```json"):
@@ -351,7 +364,7 @@ async def analyze_swing(video: UploadFile = File(...)):
             
         # Add the URL for the skeleton video to the response so the iPhone app can stream it!
         analysis_data["skeleton_video_url"] = f"/{skeleton_video_path}"
-        
+        analysis_data["overlay_available"] = use_processed_video        
         return analysis_data
 
     except Exception as e:
