@@ -194,14 +194,16 @@ def process_skeleton(video_path):
                             initial_head_y = int(head_top_y)
                         
                     # Draw Tush Line (Vertical line at initial butt position)
-                    cv2.line(image, (initial_butt_x, 0), (initial_butt_x, h), (0, 255, 255), 2) # Yellow line
-                    cv2.putText(image, "TUSH LINE", (initial_butt_x - 100, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
-                    cv2.putText(image, "TUSH LINE", (initial_butt_x - 100, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+                    if initial_butt_x is not None:
+                        cv2.line(image, (initial_butt_x, 0), (initial_butt_x, h), (0, 255, 255), 2) # Yellow line
+                        cv2.putText(image, "TUSH LINE", (initial_butt_x - 100, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
+                        cv2.putText(image, "TUSH LINE", (initial_butt_x - 100, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
 
                     # Draw Head Height Line (Horizontal line at initial head position)
-                    cv2.line(image, (0, initial_head_y - 20), (w, initial_head_y - 20), (255, 165, 0), 2) # Orange line
-                    cv2.putText(image, "HEAD LEVEL", (50, initial_head_y - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
-                    cv2.putText(image, "HEAD LEVEL", (50, initial_head_y - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 1)
+                    if initial_head_y is not None:
+                        cv2.line(image, (0, initial_head_y - 20), (w, initial_head_y - 20), (255, 165, 0), 2) # Orange line
+                        cv2.putText(image, "HEAD LEVEL", (50, initial_head_y - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
+                        cv2.putText(image, "HEAD LEVEL", (50, initial_head_y - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 1)
 
                     # 1. Chicken Wing Check (Lead arm bending too much)
                     if arm_angle < 135: 
@@ -409,10 +411,15 @@ async def generate_roast_audio(req: AudioRequest):
     }
     
     import uuid
+    import os
     response = requests.post(url, json=data, headers=headers)
     
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=f"OpenAI TTS Error: {response.text}")
+        
+    # CRITICAL FIX: Ensure static directory exists before writing audio
+    if not os.path.exists("static"):
+        os.makedirs("static", exist_ok=True)
         
     # Save to static folder and return URL
     audio_id = str(uuid.uuid4())
