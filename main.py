@@ -63,6 +63,65 @@ def calculate_angle(a, b, c):
     return angle
 
 def process_skeleton(video_path):
+    def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fps=8):
+    """
+    Creates a shorter, smaller MP4 clip for faster Gemini analysis.
+    Returns the path to the compressed analysis clip.
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise Exception("Could not open video for analysis clip creation.")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 1 or fps > 120:
+        fps = 30
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 720
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1280
+
+    scale = target_height / float(height)
+    target_width = int(width * scale)
+    target_width = max(2, target_width - (target_width % 2)) # even width for mp4 codecs
+    target_height = max(2, target_height - (target_height % 2))
+
+    output_path = video_path.replace(".mp4", "_analysis.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(output_path, fourcc, target_fps, (target_width, target_height))
+
+    if not out.isOpened():
+        raise Exception("Could not open VideoWriter for analysis clip.")
+
+    max_frames = int(max_seconds * fps)
+    frame_skip_ratio = max(1, round(fps / target_fps))
+
+    frame_count = 0
+    written_count = 0
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame_count += 1
+
+        if frame_count > max_frames:
+            break
+
+        if frame_count % frame_skip_ratio != 0:
+            continue
+
+        resized = cv2.resize(frame, (target_width, target_height))
+        out.write(resized)
+        written_count += 1
+
+    cap.release()
+    out.release()
+
+    if written_count == 0 or not os.path.exists(output_path) or os.path.getsize(output_path) <= 1024:
+        raise Exception("Analysis clip creation failed.")
+
+    return output_path
+    
     """
     Runs MediaPipe Pose detection over the video and burns in:
     - full-body skeleton
@@ -400,7 +459,9 @@ async def analyze_swing(video: UploadFile = File(...)):
         content = await video.read()
         with open(temp_video_path, "wb") as f:
             f.write(content)
-
+        # 1.2 Create a shorter compressed clip for faster AI analysis
+        print("Creating short analysis clip...")
+        analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
         # TEMP PERFORMANCE MODE:
         # Skip overlay rendering during the main request so analysis returns fast.
         print("Skipping skeleton rendering during request for faster response...")
@@ -408,8 +469,8 @@ async def analyze_swing(video: UploadFile = File(...)):
         use_processed_video = False
         
         # 2. Upload ORIGINAL video to Gemini for faster analysis
-        print("Uploading original video to Gemini...")
-        gemini_file = genai.upload_file(path=temp_video_path)
+        print("Uploading compressed analysis clip to Gemini...")
+        gemini_file = genai.upload_file(path=analysis_video_path)
 
         # Wait for the file to be processed, but do not hang forever
         print(f"Waiting for {gemini_file.name} to be processed...")
@@ -453,8 +514,14 @@ async def analyze_swing(video: UploadFile = File(...)):
             generation_config={"response_mime_type": "application/json"}
         )
 
-        # 4. Clean up Gemini file only
+        # 4. Clean up Gemini file and temporary analysis clip
         genai.delete_file(gemini_file.name)
+
+        try:
+            if os.path.exists(analysis_video_path):
+                os.remove(analysis_video_path)
+        except Exception as cleanup_error:
+            print(f"Warning: could not delete analysis clip: {cleanup_error}")
         
         # 5. Parse and return the JSON
         raw_text = response.text
