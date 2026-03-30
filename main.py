@@ -401,30 +401,12 @@ async def analyze_swing(video: UploadFile = File(...)):
         with open(temp_video_path, "wb") as f:
             f.write(content)
 
-        # 1.5 Draw Biometric Skeleton via MediaPipe
-        print("Attempting to render biometric skeleton overlay...")
+        # TEMP PERFORMANCE MODE:
+        # Skip overlay rendering during the main request so analysis returns fast.
+        print("Skipping skeleton rendering during request for faster response...")
         skeleton_video_path = temp_video_path
         use_processed_video = False
-
-        try:
-            processed_path, overlay_found = process_skeleton(temp_video_path)
-
-            if (
-                overlay_found
-                and processed_path
-                and os.path.exists(processed_path)
-                and os.path.getsize(processed_path) > 1024
-            ):
-                skeleton_video_path = processed_path
-                use_processed_video = True
-                print(f"Skeleton rendering successful: {processed_path}")
-            else:
-                print("No valid overlay video generated. Using original video.")
-
-        except Exception as e:
-            print(f"Skeleton rendering crashed: {e}. Using original video.")
-            skeleton_video_path = temp_video_path
-
+        
         # 2. Upload ORIGINAL video to Gemini for faster analysis
         print("Uploading original video to Gemini...")
         gemini_file = genai.upload_file(path=temp_video_path)
@@ -471,17 +453,9 @@ async def analyze_swing(video: UploadFile = File(...)):
             generation_config={"response_mime_type": "application/json"}
         )
 
-        # 4. Clean up Gemini file
+        # 4. Clean up Gemini file only
         genai.delete_file(gemini_file.name)
-
-        # Only delete the original upload if we have a valid processed file to serve.
-        # Otherwise keep the original so the app has a playable fallback video.
-        if use_processed_video:
-            try:
-                os.remove(temp_video_path)
-            except Exception as cleanup_error:
-                print(f"Warning: could not delete original temp video: {cleanup_error}")
-                
+        
         # 5. Parse and return the JSON
         raw_text = response.text
         if raw_text.startswith("```json"):
