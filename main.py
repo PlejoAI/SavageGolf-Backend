@@ -403,7 +403,7 @@ async def analyze_swing(video: UploadFile = File(...)):
 
         # 1.5 Draw Biometric Skeleton via MediaPipe
         print("Attempting to render biometric skeleton overlay...")
-        skeleton_video_path = temp_video_path # Default fallback is original upload
+        skeleton_video_path = temp_video_path
         use_processed_video = False
 
         try:
@@ -424,28 +424,27 @@ async def analyze_swing(video: UploadFile = File(...)):
         except Exception as e:
             print(f"Skeleton rendering crashed: {e}. Using original video.")
             skeleton_video_path = temp_video_path
-            
-            # 2. Upload to Gemini File API
-        print(f"Uploading video to Gemini...")
+
+        # 2. Upload ORIGINAL video to Gemini for faster analysis
+        print("Uploading original video to Gemini...")
         gemini_file = genai.upload_file(path=temp_video_path)
-        
-        # Wait for the file to be processed
+
+        # Wait for the file to be processed, but do not hang forever
         print(f"Waiting for {gemini_file.name} to be processed...")
         max_wait_seconds = 45
-waited = 0
+        waited = 0
 
-while gemini_file.state.name == "PROCESSING" and waited < max_wait_seconds:
-    time.sleep(2)
-    waited += 2
-    gemini_file = genai.get_file(gemini_file.name)
+        while gemini_file.state.name == "PROCESSING" and waited < max_wait_seconds:
+            time.sleep(2)
+            waited += 2
+            gemini_file = genai.get_file(gemini_file.name)
 
-if gemini_file.state.name == "PROCESSING":
-    raise ValueError("Gemini processing timed out.")
-    
+        if gemini_file.state.name == "PROCESSING":
+            raise ValueError("Gemini processing timed out.")
+
         if gemini_file.state.name == "FAILED":
             raise ValueError("Video processing failed in Gemini.")
-
-        
+            
         # 3. Prompt Gemini (Structured JSON output)
         prompt = """
         You are an elite PGA Tour biomechanics coach and a witty, tough-love golf critic. Watch this swing closely.
@@ -482,6 +481,7 @@ if gemini_file.state.name == "PROCESSING":
                 os.remove(temp_video_path)
             except Exception as cleanup_error:
                 print(f"Warning: could not delete original temp video: {cleanup_error}")
+                
         # 5. Parse and return the JSON
         raw_text = response.text
         if raw_text.startswith("```json"):
