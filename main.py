@@ -64,33 +64,41 @@ def calculate_angle(a, b, c):
 
 def process_skeleton(video_path):
     """
+    def process_skeleton(video_path):
+    """
     Runs MediaPipe Pose detection over the video to draw a biometric skeleton
-    on every frame. Returns the path to the newly rendered video, along with 
-    a dictionary of timestamps for the detected mistakes.
+    and coaching lines on frames where a golfer is detected.
+    Returns:
+      output_path, overlay_found
     """
     mp_drawing = mp.solutions.drawing_utils
     mp_pose = mp.solutions.pose
-    
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise Exception("OpenCV could not open video file.")
 
-    # Get video properties for output
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    
-    # 🏎️ PERFORMANCE BOOST: Limit max processing FPS to 15.
-    # Analyzing 60fps videos takes 4x as long. 15fps is plenty for AI and MediaPipe.
-    process_fps = min(fps, 15)
-    frame_skip_ratio = int(fps / process_fps)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 720
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1280
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    if not fps or fps <= 1 or fps > 120:
+        fps = 30
+
+    process_fps = min(float(fps), 15.0)
+    frame_skip_ratio = max(1, round(float(fps) / process_fps))
 
     output_path = video_path.replace('.mp4', '_skeleton.mp4')
-    
-    # Use standard avc1 (H.264) codec so iOS natively plays it without fighting us
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+
+    # iPhone-safe attempt
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, process_fps, (width, height))
 
+    if not out.isOpened():
+        raise Exception("OpenCV could not open VideoWriter for output file.")
+
+    overlay_found = False
+    pose_frames_detected = 0
     detected_errors = {
         "chicken_wing_ms": [],
         "posture_loss_ms": []
@@ -104,18 +112,21 @@ def process_skeleton(video_path):
     initial_head_y = None
 
     frame_count = 0
-    with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+    with mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    ) as pose:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-                
+
             frame_count += 1
-            
-            # 🏎️ PERFORMANCE BOOST: Skip frames to achieve process_fps (15fps instead of 60fps)
+
             if frame_count % frame_skip_ratio != 0:
-                continue
-                
+                continue                
             current_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
             
             # Recolor to RGB for MediaPipe
@@ -129,7 +140,8 @@ def process_skeleton(video_path):
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             
             if results.pose_landmarks:
-                mp_drawing.draw_landmarks(
+                pose_frames_detected += 1
+                overlay_found = True                mp_drawing.draw_landmarks(
                     image, 
                     results.pose_landmarks, 
                     mp_pose.POSE_CONNECTIONS,
@@ -238,8 +250,22 @@ def process_skeleton(video_path):
 
     cap.release()
     out.release()
-    return output_path
 
+    print(f"Pose frames detected: {pose_frames_detected}")
+
+    if not overlay_found:
+        print("No pose landmarks detected in any frame.")
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception as cleanup_error:
+            print(f"Could not remove empty overlay video: {cleanup_error}")
+        return None, False
+
+    if not os.path.exists(output_path) or os.path.getsize(output_path) <= 1024:
+        return None, False
+
+    return output_path, True
 @app.post("/api/analyze-swing")
 async def analyze_swing(video: UploadFile = File(...)):
     """
@@ -272,10 +298,11 @@ async def analyze_swing(video: UploadFile = File(...)):
         use_processed_video = False
 
         try:
-            processed_path = process_skeleton(temp_video_path)
+            processed_path, overlay_found = process_skeleton(temp_video_path)
 
             if (
-                processed_path
+                overlay_found
+                and processed_path
                 and os.path.exists(processed_path)
                 and os.path.getsize(processed_path) > 1024
             ):
@@ -283,12 +310,12 @@ async def analyze_swing(video: UploadFile = File(...)):
                 use_processed_video = True
                 print(f"Skeleton rendering successful: {processed_path}")
             else:
-                print("Processed skeleton video missing or too small. Using original video.")
+                print("No valid overlay video generated. Using original video.")
 
         except Exception as e:
             print(f"Skeleton rendering crashed: {e}. Using original video.")
             skeleton_video_path = temp_video_path
-        # 2. Upload to Gemini File API
+            # 2. Upload to Gemini File API
         print(f"Uploading video to Gemini...")
         gemini_file = genai.upload_file(path=skeleton_video_path)
         
