@@ -87,7 +87,7 @@ def process_skeleton(video_path):
     if not fps or fps <= 1 or fps > 120:
         fps = 30
 
-    process_fps = min(float(fps), 15.0)
+    process_fps = min(float(fps), 10.0)
     frame_skip_ratio = max(1, round(float(fps) / process_fps))
 
     output_path = video_path.replace(".mp4", "_skeleton.mp4")
@@ -110,7 +110,7 @@ def process_skeleton(video_path):
 
     with mp_pose.Pose(
         static_image_mode=False,
-        model_complexity=2,
+        model_complexity=1,
         smooth_landmarks=True,
         min_detection_confidence=0.45,
         min_tracking_confidence=0.45
@@ -427,14 +427,21 @@ async def analyze_swing(video: UploadFile = File(...)):
             
             # 2. Upload to Gemini File API
         print(f"Uploading video to Gemini...")
-        gemini_file = genai.upload_file(path=skeleton_video_path)
+        gemini_file = genai.upload_file(path=temp_video_path)
         
         # Wait for the file to be processed
         print(f"Waiting for {gemini_file.name} to be processed...")
-        while gemini_file.state.name == "PROCESSING":
-            time.sleep(2)
-            gemini_file = genai.get_file(gemini_file.name)
-            
+        max_wait_seconds = 45
+waited = 0
+
+while gemini_file.state.name == "PROCESSING" and waited < max_wait_seconds:
+    time.sleep(2)
+    waited += 2
+    gemini_file = genai.get_file(gemini_file.name)
+
+if gemini_file.state.name == "PROCESSING":
+    raise ValueError("Gemini processing timed out.")
+    
         if gemini_file.state.name == "FAILED":
             raise ValueError("Video processing failed in Gemini.")
 
