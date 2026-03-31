@@ -465,13 +465,16 @@ async def analyze_swing(video: UploadFile = File(...)):
         print("Rendering skeleton + head/tush overlay video...")
         try:
             skeleton_video_path = render_swing_overlay_video(temp_video_path, file_id=file_id)
+            print(f"skeleton_video_path returned: {skeleton_video_path}")
             use_processed_video = True if skeleton_video_path else False
+
             if not skeleton_video_path:
+                print("Overlay renderer returned None, falling back to original video.")
                 skeleton_video_path = temp_video_path
         except Exception as overlay_error:
-            print(f"Overlay rendering failed: {overlay_error}")
+            print(f"Overlay rendering failed: {repr(overlay_error)}")
             skeleton_video_path = temp_video_path
-            use_processed_video = False    
+            use_processed_video = False
             
         # 2. Upload ORIGINAL video to Gemini for faster analysis
         print("Uploading compressed analysis clip to Gemini...")
