@@ -93,7 +93,7 @@ def process_skeleton(video_path):
     output_path = video_path.replace(".mp4", "_skeleton.mp4")
 
     # More reliable in hosted environments than avc1
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     out = cv2.VideoWriter(output_path, fourcc, process_fps, (width, height))
 
     if not out.isOpened():
