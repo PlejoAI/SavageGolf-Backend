@@ -462,12 +462,17 @@ async def analyze_swing(video: UploadFile = File(...)):
         # 1.2 Create a shorter compressed clip for faster AI analysis
         print("Creating short analysis clip...")
         analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
-        # TEMP PERFORMANCE MODE:
-        # Skip overlay rendering during the main request so analysis returns fast.
-        print("Skipping skeleton rendering during request for faster response...")
+        print("Rendering skeleton + head/tush overlay video...")
+try:
+    skeleton_video_path = render_swing_overlay_video(temp_video_path, file_id=file_id)
+    use_processed_video = True if skeleton_video_path else False
+    if not skeleton_video_path:
         skeleton_video_path = temp_video_path
-        use_processed_video = False
-        
+except Exception as overlay_error:
+    print(f"Overlay rendering failed: {overlay_error}")
+    skeleton_video_path = temp_video_path
+    use_processed_video = False
+    
         # 2. Upload ORIGINAL video to Gemini for faster analysis
         print("Uploading compressed analysis clip to Gemini...")
         gemini_file = genai.upload_file(path=analysis_video_path)
