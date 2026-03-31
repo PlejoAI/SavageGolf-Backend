@@ -486,6 +486,9 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
         if not fps or fps <= 0 or fps > 120:
             fps = 24.0
 
+        # Cap output FPS for faster processing / smaller files
+        fps = min(fps, 15.0)
+
         print(f"video info: width={width}, height={height}, fps={fps}")
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -499,20 +502,19 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
         frame_count = 0
         pose_frames = 0
 
-        # Fixed reference lines from setup
         head_line_y = None
         tush_line_x = None
         setup_locked = False
 
-        # Store last detected points to reduce flicker
         last_nose_x = None
         last_nose_y = None
         last_hip_x = None
         last_hip_y = None
 
+        last_results = None
+
         NOSE = mp_pose.PoseLandmark.NOSE
         RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP
-        LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP
 
         with mp_pose.Pose(
             static_image_mode=False,
@@ -531,32 +533,28 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
                 frame_count += 1
                 output_frame = frame.copy()
 
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = pose.process(rgb)
+                # Run pose only every 2nd frame for speed
+                if frame_count % 2 == 0:
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    last_results = pose.process(rgb)
 
-                if results.pose_landmarks:
+                results = last_results
+
+                if results and results.pose_landmarks:
                     pose_frames += 1
                     landmarks = results.pose_landmarks.landmark
 
                     nose_x = int(landmarks[NOSE].x * width)
                     nose_y = int(landmarks[NOSE].y * height)
 
-                    right_hip_x = int(landmarks[RIGHT_HIP].x * width)
-                    right_hip_y = int(landmarks[RIGHT_HIP].y * height)
-
-                    left_hip_x = int(landmarks[LEFT_HIP].x * width)
-                    left_hip_y = int(landmarks[LEFT_HIP].y * height)
-
-                    # Use right hip as default tush proxy
-                    hip_x = right_hip_x
-                    hip_y = right_hip_y
+                    hip_x = int(landmarks[RIGHT_HIP].x * width)
+                    hip_y = int(landmarks[RIGHT_HIP].y * height)
 
                     last_nose_x = nose_x
                     last_nose_y = nose_y
                     last_hip_x = hip_x
                     last_hip_y = hip_y
 
-                    # Lock reference lines on first valid pose frame
                     if not setup_locked:
                         head_line_y = nose_y
                         tush_line_x = hip_x
@@ -565,22 +563,9 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
 
                 # Draw HEAD LINE
                 if head_line_y is not None:
-                    # black outline
-                    cv2.line(
-                        output_frame,
-                        (0, head_line_y),
-                        (width, head_line_y),
-                        (0, 0, 0),
-                        6
-                    )
-                    # bright main line
-                    cv2.line(
-                        output_frame,
-                        (0, head_line_y),
-                        (width, head_line_y),
-                        (255, 255, 0), # cyan/yellow-ish
-                        3
-                    )
+                    cv2.line(output_frame, (0, head_line_y), (width, head_line_y), (0, 0, 0), 6)
+                    cv2.line(output_frame, (0, head_line_y), (width, head_line_y), (255, 255, 0), 3)
+
                     cv2.putText(
                         output_frame,
                         "HEAD LINE",
@@ -604,24 +589,11 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
 
                 # Draw TUSH LINE
                 if tush_line_x is not None:
-                    # black outline
-                    cv2.line(
-                        output_frame,
-                        (tush_line_x, 0),
-                        (tush_line_x, height),
-                        (0, 0, 0),
-                        6
-                    )
-                    # bright main line
-                    cv2.line(
-                        output_frame,
-                        (tush_line_x, 0),
-                        (tush_line_x, height),
-                        (0, 140, 255), # orange
-                        3
-                    )
+                    cv2.line(output_frame, (tush_line_x, 0), (tush_line_x, height), (0, 0, 0), 6)
+                    cv2.line(output_frame, (tush_line_x, 0), (tush_line_x, height), (0, 140, 255), 3)
 
                     label_x = min(tush_line_x + 12, width - 180)
+
                     cv2.putText(
                         output_frame,
                         "TUSH LINE",
@@ -643,7 +615,7 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
                         cv2.LINE_AA
                     )
 
-                # Optional markers for current positions
+                # Draw current markers
                 if last_nose_x is not None and last_nose_y is not None:
                     cv2.circle(output_frame, (last_nose_x, last_nose_y), 8, (0, 0, 0), -1)
                     cv2.circle(output_frame, (last_nose_x, last_nose_y), 5, (255, 255, 0), -1)
@@ -720,7 +692,7 @@ async def analyze_swing(video: UploadFile = File(...)):
         analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
         print("Rendering skeleton + head/tush overlay video...")
         try:
-            skeleton_video_path = render_swing_overlay_video(temp_video_path, file_id=file_id)
+            skeleton_video_path = render_swing_overlay_video(analysis_video_path, file_id=file_id)
             print(f"skeleton_video_path returned: {skeleton_video_path}")
             use_processed_video = True if skeleton_video_path else False
 
