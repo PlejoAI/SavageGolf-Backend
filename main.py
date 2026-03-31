@@ -456,7 +456,7 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
         print(f"Overlay copy failed: {repr(e)}")
         return None
         
-    async def analyze_swing(video: UploadFile = File(...)):
+async def analyze_swing(video: UploadFile = File(...)):
     """
     Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
     for biomechanical analysis and a savage roast, and returns JSON.
