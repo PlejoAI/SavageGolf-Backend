@@ -93,11 +93,11 @@ def process_skeleton(video_path):
     output_path = video_path.replace(".mp4", "_skeleton.mp4")
 
     # More reliable in hosted environments than avc1
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
-    out = cv2.VideoWriter(output_path, fourcc, process_fps, (width, height))
-
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     if not out.isOpened():
-        raise Exception("OpenCV could not open VideoWriter for output file.")
+    print("ERROR: VideoWriter failed to open")
+    return None
 
     overlay_found = False
     pose_frames_detected = 0
@@ -445,7 +445,7 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
         print("Overlay input video does not exist")
         return None
 
-    output_path = f"static/{file_id}_overlay.avi"
+    output_path = f"static/{file_id}_overlay.mp4"
     print(f"output_path={output_path}")
 
     try:
@@ -491,7 +491,7 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
 
         print(f"video info: width={width}, height={height}, fps={fps}")
 
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         if not out.isOpened():
             print("ERROR: VideoWriter failed to open")
@@ -531,6 +531,8 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
                     break
 
                 frame_count += 1
+                output_frame = cv2.cvtColor(output_frame, cv2.COLOR_BGR2RGB)
+                output_frame = cv2.cvtColor(output_frame, cv2.COLOR_RGB2BGR)
                 output_frame = output_frame.copy()
                 out.write(output_frame)
 
