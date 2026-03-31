@@ -434,7 +434,29 @@ def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fp
 
     return output_path
 @app.post("/api/analyze-swing")
-async def analyze_swing(video: UploadFile = File(...)):
+def render_swing_overlay_video(input_video_path: str, file_id: str):
+    import os
+    import shutil
+
+    print("=== OVERLAY START ===")
+    print(f"input_video_path={input_video_path}")
+
+    if not os.path.exists(input_video_path):
+        print("Overlay input video does not exist")
+        return None
+
+    output_path = f"static/{file_id}_overlay.mp4"
+    print(f"output_path={output_path}")
+
+    try:
+        shutil.copy(input_video_path, output_path)
+        print(f"Overlay test copy created at {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"Overlay copy failed: {repr(e)}")
+        return None
+        
+    async def analyze_swing(video: UploadFile = File(...)):
     """
     Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
     for biomechanical analysis and a savage roast, and returns JSON.
