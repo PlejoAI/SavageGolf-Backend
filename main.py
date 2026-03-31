@@ -433,7 +433,7 @@ def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fp
         raise Exception("Analysis clip creation failed.")
 
     return output_path
-@app.post("/api/analyze-swing")
+
 def render_swing_overlay_video(input_video_path: str, file_id: str):
     import os
     import shutil
@@ -455,7 +455,8 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
     except Exception as e:
         print(f"Overlay copy failed: {repr(e)}")
         return None
-        
+
+@app.post("/api/analyze-swing")
 async def analyze_swing(video: UploadFile = File(...)):
     """
     Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
