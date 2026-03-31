@@ -496,10 +496,6 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
             return None
 
         mp_pose = mp.solutions.pose
-        mp_drawing = mp.solutions.drawing_utils
-
-        drawing_spec_landmarks = mp_drawing.DrawingSpec(color=(0, 255, 102), thickness=3, circle_radius=3)
-        drawing_spec_connections = mp_drawing.DrawingSpec(color=(0, 200, 80), thickness=2, circle_radius=2)
 
         frame_count = 0
         pose_frames = 0
@@ -561,15 +557,6 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
                         tush_line_x = right_hip_x
                         setup_locked = True
                         print(f"Setup locked: head_line_y={head_line_y}, tush_line_x={tush_line_x}")
-
-                    # Draw skeleton
-                    mp_drawing.draw_landmarks(
-                        output_frame,
-                        results.pose_landmarks,
-                        mp_pose.POSE_CONNECTIONS,
-                        landmark_drawing_spec=drawing_spec_landmarks,
-                        connection_drawing_spec=drawing_spec_connections
-                    )
 
                     # Draw head line (horizontal)
                     if head_line_y is not None:
