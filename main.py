@@ -459,7 +459,6 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
     import os
     import cv2
     import mediapipe as mp
-    import numpy as np
 
     print("=== OVERLAY START ===")
     print(f"input_video_path={input_video_path}")
@@ -500,21 +499,24 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
         frame_count = 0
         pose_frames = 0
 
-        # Reference lines captured from the first usable pose frame
+        # Fixed reference lines from setup
         head_line_y = None
         tush_line_x = None
         setup_locked = False
 
-        # Choose trail hip based on handedness assumption.
-        # For now, use RIGHT_HIP as default proxy for tush line.
-        # You can later refine by detecting face-on vs down-the-line or handedness.
+        # Store last detected points to reduce flicker
+        last_nose_x = None
+        last_nose_y = None
+        last_hip_x = None
+        last_hip_y = None
+
         NOSE = mp_pose.PoseLandmark.NOSE
         RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP
         LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP
 
         with mp_pose.Pose(
             static_image_mode=False,
-            model_complexity=1,
+            model_complexity=0,
             smooth_landmarks=True,
             enable_segmentation=False,
             min_detection_confidence=0.5,
@@ -534,10 +536,8 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
 
                 if results.pose_landmarks:
                     pose_frames += 1
-
                     landmarks = results.pose_landmarks.landmark
 
-                    # Convert normalized landmark coordinates to pixel coordinates
                     nose_x = int(landmarks[NOSE].x * width)
                     nose_y = int(landmarks[NOSE].y * height)
 
@@ -547,62 +547,111 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
                     left_hip_x = int(landmarks[LEFT_HIP].x * width)
                     left_hip_y = int(landmarks[LEFT_HIP].y * height)
 
-                    # Use a hip midpoint fallback if needed
-                    hip_mid_x = int((right_hip_x + left_hip_x) / 2)
-                    hip_mid_y = int((right_hip_y + left_hip_y) / 2)
+                    # Use right hip as default tush proxy
+                    hip_x = right_hip_x
+                    hip_y = right_hip_y
 
-                    # Lock setup reference lines from the first stable pose frame
+                    last_nose_x = nose_x
+                    last_nose_y = nose_y
+                    last_hip_x = hip_x
+                    last_hip_y = hip_y
+
+                    # Lock reference lines on first valid pose frame
                     if not setup_locked:
                         head_line_y = nose_y
-                        tush_line_x = right_hip_x
+                        tush_line_x = hip_x
                         setup_locked = True
                         print(f"Setup locked: head_line_y={head_line_y}, tush_line_x={tush_line_x}")
 
-                    # Draw head line (horizontal)
-                    if head_line_y is not None:
-                        cv2.line(
-                            output_frame,
-                            (0, head_line_y),
-                            (width, head_line_y),
-                            (255, 255, 0), # cyan/yellow-ish in BGR
-                            3
-                        )
-                        cv2.putText(
-                            output_frame,
-                            "HEAD LINE",
-                            (20, max(30, head_line_y - 10)),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.7,
-                            (255, 255, 0),
-                            2,
-                            cv2.LINE_AA
-                        )
+                # Draw HEAD LINE
+                if head_line_y is not None:
+                    # black outline
+                    cv2.line(
+                        output_frame,
+                        (0, head_line_y),
+                        (width, head_line_y),
+                        (0, 0, 0),
+                        6
+                    )
+                    # bright main line
+                    cv2.line(
+                        output_frame,
+                        (0, head_line_y),
+                        (width, head_line_y),
+                        (255, 255, 0), # cyan/yellow-ish
+                        3
+                    )
+                    cv2.putText(
+                        output_frame,
+                        "HEAD LINE",
+                        (20, max(35, head_line_y - 12)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 0, 0),
+                        4,
+                        cv2.LINE_AA
+                    )
+                    cv2.putText(
+                        output_frame,
+                        "HEAD LINE",
+                        (20, max(35, head_line_y - 12)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (255, 255, 0),
+                        2,
+                        cv2.LINE_AA
+                    )
 
-                    # Draw tush line (vertical)
-                    if tush_line_x is not None:
-                        cv2.line(
-                            output_frame,
-                            (tush_line_x, 0),
-                            (tush_line_x, height),
-                            (0, 140, 255), # orange-ish in BGR
-                            3
-                        )
-                        cv2.putText(
-                            output_frame,
-                            "TUSH LINE",
-                            (min(tush_line_x + 10, width - 160), 40),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.7,
-                            (0, 140, 255),
-                            2,
-                            cv2.LINE_AA
-                        )
+                # Draw TUSH LINE
+                if tush_line_x is not None:
+                    # black outline
+                    cv2.line(
+                        output_frame,
+                        (tush_line_x, 0),
+                        (tush_line_x, height),
+                        (0, 0, 0),
+                        6
+                    )
+                    # bright main line
+                    cv2.line(
+                        output_frame,
+                        (tush_line_x, 0),
+                        (tush_line_x, height),
+                        (0, 140, 255), # orange
+                        3
+                    )
 
-                    # Optional: emphasize current nose / hip position with markers
-                    cv2.circle(output_frame, (nose_x, nose_y), 6, (255, 255, 0), -1)
-                    cv2.circle(output_frame, (right_hip_x, right_hip_y), 6, (0, 140, 255), -1)
+                    label_x = min(tush_line_x + 12, width - 180)
+                    cv2.putText(
+                        output_frame,
+                        "TUSH LINE",
+                        (label_x, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 0, 0),
+                        4,
+                        cv2.LINE_AA
+                    )
+                    cv2.putText(
+                        output_frame,
+                        "TUSH LINE",
+                        (label_x, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 140, 255),
+                        2,
+                        cv2.LINE_AA
+                    )
 
-                # Always write frame, even if pose isn't detected
+                # Optional markers for current positions
+                if last_nose_x is not None and last_nose_y is not None:
+                    cv2.circle(output_frame, (last_nose_x, last_nose_y), 8, (0, 0, 0), -1)
+                    cv2.circle(output_frame, (last_nose_x, last_nose_y), 5, (255, 255, 0), -1)
+
+                if last_hip_x is not None and last_hip_y is not None:
+                    cv2.circle(output_frame, (last_hip_x, last_hip_y), 8, (0, 0, 0), -1)
+                    cv2.circle(output_frame, (last_hip_x, last_hip_y), 5, (0, 140, 255), -1)
+
                 out.write(output_frame)
 
         if cap is not None:
