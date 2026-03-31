@@ -455,7 +455,204 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
     except Exception as e:
         print(f"Overlay copy failed: {repr(e)}")
         return None
+def render_swing_overlay_video(input_video_path: str, file_id: str):
+    import os
+    import cv2
+    import mediapipe as mp
+    import numpy as np
 
+    print("=== OVERLAY START ===")
+    print(f"input_video_path={input_video_path}")
+
+    if not os.path.exists(input_video_path):
+        print("Overlay input video does not exist")
+        return None
+
+    output_path = f"static/{file_id}_overlay.mp4"
+    print(f"output_path={output_path}")
+
+    cap = None
+    out = None
+
+    try:
+        cap = cv2.VideoCapture(input_video_path)
+        if not cap.isOpened():
+            print("ERROR: Could not open input video")
+            return None
+
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        if not fps or fps <= 0 or fps > 120:
+            fps = 24.0
+
+        print(f"video info: width={width}, height={height}, fps={fps}")
+
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        if not out.isOpened():
+            print("ERROR: VideoWriter failed to open")
+            return None
+
+        mp_pose = mp.solutions.pose
+        mp_drawing = mp.solutions.drawing_utils
+
+        drawing_spec_landmarks = mp_drawing.DrawingSpec(color=(0, 255, 102), thickness=3, circle_radius=3)
+        drawing_spec_connections = mp_drawing.DrawingSpec(color=(0, 200, 80), thickness=2, circle_radius=2)
+
+        frame_count = 0
+        pose_frames = 0
+
+        # Reference lines captured from the first usable pose frame
+        head_line_y = None
+        tush_line_x = None
+        setup_locked = False
+
+        # Choose trail hip based on handedness assumption.
+        # For now, use RIGHT_HIP as default proxy for tush line.
+        # You can later refine by detecting face-on vs down-the-line or handedness.
+        NOSE = mp_pose.PoseLandmark.NOSE
+        RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP
+        LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP
+
+        with mp_pose.Pose(
+            static_image_mode=False,
+            model_complexity=1,
+            smooth_landmarks=True,
+            enable_segmentation=False,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        ) as pose:
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frame_count += 1
+                output_frame = frame.copy()
+
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = pose.process(rgb)
+
+                if results.pose_landmarks:
+                    pose_frames += 1
+
+                    landmarks = results.pose_landmarks.landmark
+
+                    # Convert normalized landmark coordinates to pixel coordinates
+                    nose_x = int(landmarks[NOSE].x * width)
+                    nose_y = int(landmarks[NOSE].y * height)
+
+                    right_hip_x = int(landmarks[RIGHT_HIP].x * width)
+                    right_hip_y = int(landmarks[RIGHT_HIP].y * height)
+
+                    left_hip_x = int(landmarks[LEFT_HIP].x * width)
+                    left_hip_y = int(landmarks[LEFT_HIP].y * height)
+
+                    # Use a hip midpoint fallback if needed
+                    hip_mid_x = int((right_hip_x + left_hip_x) / 2)
+                    hip_mid_y = int((right_hip_y + left_hip_y) / 2)
+
+                    # Lock setup reference lines from the first stable pose frame
+                    if not setup_locked:
+                        head_line_y = nose_y
+                        tush_line_x = right_hip_x
+                        setup_locked = True
+                        print(f"Setup locked: head_line_y={head_line_y}, tush_line_x={tush_line_x}")
+
+                    # Draw skeleton
+                    mp_drawing.draw_landmarks(
+                        output_frame,
+                        results.pose_landmarks,
+                        mp_pose.POSE_CONNECTIONS,
+                        landmark_drawing_spec=drawing_spec_landmarks,
+                        connection_drawing_spec=drawing_spec_connections
+                    )
+
+                    # Draw head line (horizontal)
+                    if head_line_y is not None:
+                        cv2.line(
+                            output_frame,
+                            (0, head_line_y),
+                            (width, head_line_y),
+                            (255, 255, 0), # cyan/yellow-ish in BGR
+                            3
+                        )
+                        cv2.putText(
+                            output_frame,
+                            "HEAD LINE",
+                            (20, max(30, head_line_y - 10)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (255, 255, 0),
+                            2,
+                            cv2.LINE_AA
+                        )
+
+                    # Draw tush line (vertical)
+                    if tush_line_x is not None:
+                        cv2.line(
+                            output_frame,
+                            (tush_line_x, 0),
+                            (tush_line_x, height),
+                            (0, 140, 255), # orange-ish in BGR
+                            3
+                        )
+                        cv2.putText(
+                            output_frame,
+                            "TUSH LINE",
+                            (min(tush_line_x + 10, width - 160), 40),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (0, 140, 255),
+                            2,
+                            cv2.LINE_AA
+                        )
+
+                    # Optional: emphasize current nose / hip position with markers
+                    cv2.circle(output_frame, (nose_x, nose_y), 6, (255, 255, 0), -1)
+                    cv2.circle(output_frame, (right_hip_x, right_hip_y), 6, (0, 140, 255), -1)
+
+                # Always write frame, even if pose isn't detected
+                out.write(output_frame)
+
+        if cap is not None:
+            cap.release()
+        if out is not None:
+            out.release()
+
+        exists = os.path.exists(output_path)
+        size = os.path.getsize(output_path) if exists else 0
+
+        print(f"processed frames={frame_count}, pose_frames={pose_frames}")
+        print(f"output exists={exists}, size={size}")
+
+        if exists and size > 0 and pose_frames > 0:
+            print("=== OVERLAY SUCCESS ===")
+            return output_path
+
+        print("ERROR: Overlay output missing, empty, or no pose frames detected")
+        return None
+
+    except Exception as e:
+        print(f"OVERLAY EXCEPTION: {repr(e)}")
+        return None
+
+    finally:
+        try:
+            if cap is not None:
+                cap.release()
+        except Exception:
+            pass
+
+        try:
+            if out is not None:
+                out.release()
+        except Exception:
+            pass
+            
 @app.post("/api/analyze-swing")
 async def analyze_swing(video: UploadFile = File(...)):
     """
