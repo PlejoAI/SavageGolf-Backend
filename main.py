@@ -445,7 +445,7 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
         print("Overlay input video does not exist")
         return None
 
-    output_path = f"static/{file_id}_overlay.mp4"
+    output_path = f"static/{file_id}_overlay.avi"
     print(f"output_path={output_path}")
 
     try:
@@ -491,7 +491,7 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
 
         print(f"video info: width={width}, height={height}, fps={fps}")
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         if not out.isOpened():
             print("ERROR: VideoWriter failed to open")
@@ -531,7 +531,8 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
                     break
 
                 frame_count += 1
-                output_frame = frame.copy()
+                output_frame = output_frame.copy()
+                out.write(output_frame)
 
                 # Run pose only every 2nd frame for speed
                 if frame_count % 2 == 0:
