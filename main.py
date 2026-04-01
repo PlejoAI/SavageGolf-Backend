@@ -437,24 +437,6 @@ def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fp
 def render_swing_overlay_video(input_video_path: str, file_id: str):
     return input_video_path
 
-    print("=== OVERLAY STUB COPY ===")
-    print(f"input_video_path={input_video_path}")
-
-    if not os.path.exists(input_video_path):
-        print("Overlay input video does not exist")
-        return None
-
-    output_path = f"static/{file_id}_overlay.mp4"
-    print(f"output_path={output_path}")
-
-    try:
-        shutil.copy(input_video_path, output_path)
-        print(f"Overlay copy created at {output_path}")
-        return output_path
-    except Exception as e:
-        print(f"Overlay copy failed: {repr(e)}")
-        return None
-
 def extract_overlay_guides(input_video_path: str):
     import os
     import cv2
