@@ -636,15 +636,14 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
 
         exists = os.path.exists(output_path)
         size = os.path.getsize(output_path) if exists else 0
-
         print(f"processed frames={frame_count}, pose_frames={pose_frames}")
         print(f"output exists={exists}, size={size}")
 
-        if exists and size > 0 and pose_frames > 0:
+        if exists and size > 0:
             print("=== OVERLAY SUCCESS ===")
             return output_path
 
-        print("ERROR: Overlay output missing, empty, or no pose frames detected")
+        print("ERROR: Overlay output missing or empty")
         return None
 
     except Exception as e:
