@@ -574,9 +574,9 @@ async def analyze_swing(video: UploadFile = File(...)):
         print("Creating short analysis clip...")
         analysis_video_path = create_analysis_clip(
             temp_video_path,
-            max_seconds=4,
-            target_height=540,
-            target_fps=8
+            max_seconds=3,
+            target_height=480,
+            target_fps=6
         )
 
         # Optional advanced coach-view overlay is disabled in the default flow
@@ -610,33 +610,30 @@ async def analyze_swing(video: UploadFile = File(...)):
         First, visually identify the golf club being used (Driver vs Iron vs Wedge vs Putter). Do not hallucinate a driver if they are holding an iron.
 
         Your style rules:
-        - Be honest. Do not be overly nice or overly positive if the swing is bad.
+        - Be honest.
         - Be more funny than rude.
-        - Vary your language naturally every time. Do not reuse the same roast structure, catchphrases, or praise patterns.
-        - Sound current, sharp, and grounded in modern golf instruction.
+        - Keep your wording fresh and non-repetitive.
         - Teach like a coach for an average golfer: clear, specific, useful.
-        - Praise only what is genuinely earned in the swing.
-        - If the swing is poor, say so directly but playfully and helpfully.
+        - Praise only what is genuinely earned.
 
         Output ONLY valid JSON containing:
-        1. 'detected_club': The name of the club you visually identified (e.g., '7-Iron', 'Driver', 'Wedge').
-        2. 'step_by_step_analysis': array of 3-4 strings detailing the breakdown.
+        1. 'detected_club': The club you visually identified (e.g., '7-Iron', 'Driver', 'Wedge').
+        2. 'step_by_step_analysis': array of 2 short strings with the two most important breakdown points.
         3. 'swing_summary': object with 'posture_score' (1-10), 'tempo' (Fast/Smooth/Jerky), 'estimated_outcome' (Slice/Hook/Pure/Push/Pull/Thin/Fat), 'swing_plane' (Over Top/Under/On Plane), 'clubface_angle' (Open/Closed/Square), 'hip_depth' (Maintained/Loss/Thrust).
         4. 'the_good': one thing they genuinely did well.
         5. 'the_critical_flaw': the biggest issue.
-        6. 'personalized_training_plan': array of 2 objects. Each must have 'drill_name', 'location' (Driving Range / Living Room), 'how_to_do_it' (2 quick steps), and 'what_to_feel' (a highly specific, exaggerated physical sensation they must focus on during the drill).
-        7. 'savage_mode': A 2-sentence verdict. Sentence 1 must be a fresh, punchy Chad-style joke/comment that changes wording from swing to swing, is funny, and is not mean-spirited or generic. Sentence 2 must clearly explain exactly what they did wrong biomechanically, in plain English, so an average golfer learns something immediately.
-        8. 'fitness_prescription': array of 2-3 objects to fix their physical limitations. Each must have 'exercise_name', 'sets_and_reps', and 'why_it_helps'.
-        9. 'physical_diagnosis': A witty but useful explanation of the physical limitation in their body that caused the swing flaw (e.g. tight hips, weak core).
+        6. 'personalized_training_plan': array of 1 object. It must have 'drill_name', 'location' (Driving Range / Living Room), 'how_to_do_it' (2 quick steps), and 'what_to_feel' (a specific exaggerated feel).
+        7. 'savage_mode': A 2-sentence verdict. Sentence 1 must be a fresh, funny Chad-style comment. Sentence 2 must briefly explain the biggest biomechanical issue in plain English.
+        8. 'fitness_prescription': array of 2 objects. Each must have 'exercise_name', 'sets_and_reps', and 'why_it_helps'.
+        9. 'physical_diagnosis': A short, useful explanation of the physical limitation causing the flaw.
 
         IMPORTANT:
-        - Make 'savage_mode' noticeably different across analyses.
-        - Avoid generic lines like 'not bad', 'pretty solid', or repeating the same compliment formula.
-        - Humor should feel playful and memorable, not harsh.
-        - The educational sentence must mention the likely face/path/body issue driving the outcome.
-        - Never use double quotes (\") inside your string values, use single quotes (') instead so you do not break the JSON format.
+        - Keep every field concise.
+        - Make 'savage_mode' different across analyses.
+        - Avoid generic lines like 'not bad' or 'pretty solid'.
+        - Never use double quotes (") inside your string values, use single quotes (') instead so you do not break the JSON format.
         """
-
+        
         # Using gemini-3-flash-preview for video capabilities
         model = genai.GenerativeModel('models/gemini-3-flash-preview')
         response = model.generate_content(
