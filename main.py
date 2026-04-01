@@ -572,10 +572,6 @@ async def analyze_swing(video: UploadFile = File(...)):
             
         # 1.2 Create a shorter compressed clip for faster AI analysis
         print("Creating short analysis clip...")
-        analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
-
-        # Create a shorter compressed clip for faster AI analysis
-        print("Creating short analysis clip...")
         analysis_video_path = create_analysis_clip(
             temp_video_path,
             max_seconds=4,
