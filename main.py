@@ -569,32 +569,16 @@ async def analyze_swing(video: UploadFile = File(...)):
         content = await video.read()
         with open(temp_video_path, "wb") as f:
             f.write(content)
+            
         # 1.2 Create a shorter compressed clip for faster AI analysis
         print("Creating short analysis clip...")
         analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
 
+        # Optional advanced coach-view overlay is disabled in the default flow
+        # so average golfers get faster analysis results.
         overlay_guides = None
-
-        print("Preparing frontend overlay guide data...")
-        try:
-            skeleton_video_path = render_swing_overlay_video(temp_video_path, file_id=file_id)
-            print(f"skeleton_video_path returned: {skeleton_video_path}")
-
-            overlay_guides = extract_overlay_guides(
-                analysis_video_path if analysis_video_path and os.path.exists(analysis_video_path) else temp_video_path
-            )
-            print(f"overlay_guides returned: {overlay_guides}")
-
-            if overlay_guides:
-                use_processed_video = True
-            else:
-                use_processed_video = False
-
-        except Exception as overlay_error:
-            print(f"Overlay preparation failed: {repr(overlay_error)}")
-            skeleton_video_path = temp_video_path
-            overlay_guides = None
-            use_processed_video = False
+        skeleton_video_path = temp_video_path
+        use_processed_video = False
             
         # 2. Upload ORIGINAL video to Gemini for faster analysis
         print("Uploading compressed analysis clip to Gemini...")
