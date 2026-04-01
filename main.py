@@ -440,10 +440,6 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
 
     print("=== OVERLAY START ===")
     print(f"input_video_path={input_video_path}")
-    print(f"output_path={output_path}")
-    print(f"video info: width={width}, height={height}, fps={fps}")
-    print(f"writer opened: {out.isOpened()}")
-
 
     if not os.path.exists(input_video_path):
         print("Overlay input video does not exist")
@@ -459,6 +455,7 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
     except Exception as e:
         print(f"Overlay copy failed: {repr(e)}")
         return None
+        
 def render_swing_overlay_video(input_video_path: str, file_id: str):
     import os
     import cv2
