@@ -96,8 +96,8 @@ def process_skeleton(video_path):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     if not out.isOpened():
-    print("ERROR: VideoWriter failed to open")
-    return None
+        print("ERROR: VideoWriter failed to open")
+        return None
 
     overlay_found = False
     pose_frames_detected = 0
