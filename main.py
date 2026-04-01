@@ -435,8 +435,7 @@ def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fp
     return output_path
 
 def render_swing_overlay_video(input_video_path: str, file_id: str):
-    import os
-    import shutil
+    return input_video_path
 
     print("=== OVERLAY STUB COPY ===")
     print(f"input_video_path={input_video_path}")
@@ -455,7 +454,87 @@ def render_swing_overlay_video(input_video_path: str, file_id: str):
     except Exception as e:
         print(f"Overlay copy failed: {repr(e)}")
         return None
-    
+
+def extract_overlay_guides(input_video_path: str):
+    import os
+    import cv2
+    import mediapipe as mp
+
+    print("=== EXTRACT OVERLAY GUIDES START ===")
+    print(f"input_video_path={input_video_path}")
+
+    if not os.path.exists(input_video_path):
+        print("Guide extraction input video does not exist")
+        return None
+
+    cap = None
+
+    try:
+        cap = cv2.VideoCapture(input_video_path)
+        if not cap.isOpened():
+            print("ERROR: Could not open video for guide extraction")
+            return None
+
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        if width <= 0 or height <= 0:
+            print("ERROR: Invalid video dimensions")
+            return None
+
+        mp_pose = mp.solutions.pose
+        NOSE = mp_pose.PoseLandmark.NOSE
+        RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP
+
+        frame_count = 0
+
+        with mp_pose.Pose(
+            static_image_mode=False,
+            model_complexity=0,
+            smooth_landmarks=True,
+            enable_segmentation=False,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        ) as pose:
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frame_count += 1
+
+                if frame_count > 20:
+                    break
+
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = pose.process(rgb)
+
+                if results and results.pose_landmarks:
+                    landmarks = results.pose_landmarks.landmark
+
+                    guides = {
+                        "head_line_y_ratio": float(landmarks[NOSE].y),
+                        "tush_line_x_ratio": float(landmarks[RIGHT_HIP].x)
+                    }
+
+                    print(f"Overlay guides detected: {guides}")
+                    return guides
+
+        print("No usable pose landmarks found for overlay guides")
+        return None
+
+    except Exception as e:
+        print(f"GUIDE EXTRACTION EXCEPTION: {repr(e)}")
+        return None
+
+    finally:
+        try:
+            if cap is not None:
+                cap.release()
+        except Exception:
+            pass
+            
 @app.post("/api/analyze-swing")
 async def analyze_swing(video: UploadFile = File(...)):
     """
