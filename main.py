@@ -574,13 +574,20 @@ async def analyze_swing(video: UploadFile = File(...)):
         print("Creating short analysis clip...")
         analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
 
+        # Create a shorter compressed clip for faster AI analysis
+        print("Creating short analysis clip...")
+        analysis_video_path = create_analysis_clip(
+            temp_video_path,
+            max_seconds=4,
+            target_height=540,
+            target_fps=8
+        )
+
         # Optional advanced coach-view overlay is disabled in the default flow
         # so average golfers get faster analysis results.
-        overlay_guides = None
         skeleton_video_path = temp_video_path
-        use_processed_video = False
-            
-        # 2. Upload ORIGINAL video to Gemini for faster analysis
+
+        # 2. Upload compressed analysis clip to Gemini
         print("Uploading compressed analysis clip to Gemini...")
         gemini_file = genai.upload_file(path=analysis_video_path)
 
@@ -640,14 +647,11 @@ async def analyze_swing(video: UploadFile = File(...)):
             generation_config={"response_mime_type": "application/json"}
         )
 
-        # 4. Clean up Gemini file and temporary analysis clip
+        # 4. Clean up the original file & Gemini file
+        os.remove(temp_video_path)
+        if os.path.exists(analysis_video_path):
+            os.remove(analysis_video_path)
         genai.delete_file(gemini_file.name)
-
-        try:
-            if analysis_video_path and os.path.exists(analysis_video_path):
-                os.remove(analysis_video_path)
-        except Exception as cleanup_error:
-            print(f"Warning: could not delete analysis clip: {cleanup_error}")
             
         # 5. Parse and return the JSON
         raw_text = response.text
