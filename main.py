@@ -434,7 +434,9 @@ def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fp
 
     return output_path
 
-def render_swing_overlay_video(input_video_path: str, file_id: str):
+ef render_swing_overlay_video(input_video_path: str, file_id: str):
+    # We no longer generate a separate overlay video.
+    # Keep the original video path and draw guides on the frontend.
     return input_video_path
 
 def extract_overlay_guides(input_video_path: str):
@@ -466,9 +468,11 @@ def extract_overlay_guides(input_video_path: str):
 
         mp_pose = mp.solutions.pose
         NOSE = mp_pose.PoseLandmark.NOSE
+        LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP
         RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP
 
         frame_count = 0
+        stable_samples = []
 
         with mp_pose.Pose(
             static_image_mode=False,
@@ -486,7 +490,8 @@ def extract_overlay_guides(input_video_path: str):
 
                 frame_count += 1
 
-                if frame_count > 20:
+                # Only inspect early frames to capture setup position
+                if frame_count > 25:
                     break
 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -495,16 +500,37 @@ def extract_overlay_guides(input_video_path: str):
                 if results and results.pose_landmarks:
                     landmarks = results.pose_landmarks.landmark
 
-                    guides = {
-                        "head_line_y_ratio": float(landmarks[NOSE].y),
-                        "tush_line_x_ratio": float(landmarks[RIGHT_HIP].x)
-                    }
+                    nose_y = float(landmarks[NOSE].y)
+                    left_hip_x = float(landmarks[LEFT_HIP].x)
+                    right_hip_x = float(landmarks[RIGHT_HIP].x)
 
-                    print(f"Overlay guides detected: {guides}")
-                    return guides
+                    # Use the deeper hip (farther right in image) as a simple tush proxy for now.
+                    # This is better than a hardcoded right hip for many down-the-line views.
+                    tush_x = max(left_hip_x, right_hip_x)
 
-        print("No usable pose landmarks found for overlay guides")
-        return None
+                    stable_samples.append({
+                        "head_line_y_ratio": nose_y,
+                        "tush_line_x_ratio": tush_x
+                    })
+
+                    # We only need a few stable samples
+                    if len(stable_samples) >= 5:
+                        break
+
+        if not stable_samples:
+            print("No usable pose landmarks found for overlay guides")
+            return None
+
+        avg_head = sum(s["head_line_y_ratio"] for s in stable_samples) / len(stable_samples)
+        avg_tush = sum(s["tush_line_x_ratio"] for s in stable_samples) / len(stable_samples)
+
+        guides = {
+            "head_line_y_ratio": avg_head,
+            "tush_line_x_ratio": avg_tush
+        }
+
+        print(f"Overlay guides detected: {guides}")
+        return guides
 
     except Exception as e:
         print(f"GUIDE EXTRACTION EXCEPTION: {repr(e)}")
@@ -641,14 +667,15 @@ async def analyze_swing(video: UploadFile = File(...)):
         # If Gemini returned a list of 1 object instead of an object, extract it
         if isinstance(analysis_data, list):
             analysis_data = analysis_data[0]
-            
-        # Add the URL for the skeleton video to the response so the iPhone app can stream it!
+
+        if overlay_guides:
+            analysis_data["overlay_guides"] = overlay_guides
+            analysis_data["overlay_available"] = True
+        else:
+            analysis_data["overlay_available"] = False
+
+        # Add the URL for the skeleton/original video to the response
         analysis_data["skeleton_video_url"] = f"/{skeleton_video_path}"
-        analysis_data["overlay_available"] = use_processed_video 
-        analysis_data["overlay_guides"] = {
-            "head_line_y_ratio": 0.24,
-            "tush_line_x_ratio": 0.66
-        }        
         return analysis_data
 
     except Exception as e:
