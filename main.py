@@ -583,7 +583,11 @@ async def analyze_swing(video: UploadFile = File(...)):
             
         # Add the URL for the skeleton video to the response so the iPhone app can stream it!
         analysis_data["skeleton_video_url"] = f"/{skeleton_video_path}"
-        analysis_data["overlay_available"] = use_processed_video        
+        analysis_data["overlay_available"] = use_processed_video 
+        analysis_data["overlay_guides"] = {
+            "head_line_y_ratio": 0.24,
+            "tush_line_x_ratio": 0.66
+        }        
         return analysis_data
 
     except Exception as e:
