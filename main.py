@@ -581,6 +581,7 @@ async def analyze_swing(video: UploadFile = File(...)):
 
         # Optional advanced coach-view overlay is disabled in the default flow
         # so average golfers get faster analysis results.
+        overlay_guides = None
         skeleton_video_path = temp_video_path
 
         # 2. Upload compressed analysis clip to Gemini
