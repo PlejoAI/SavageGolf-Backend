@@ -434,7 +434,7 @@ def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fp
 
     return output_path
 
-ef render_swing_overlay_video(input_video_path: str, file_id: str):
+def render_swing_overlay_video(input_video_path: str, file_id: str):
     # We no longer generate a separate overlay video.
     # Keep the original video path and draw guides on the frontend.
     return input_video_path
