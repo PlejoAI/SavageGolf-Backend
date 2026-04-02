@@ -605,7 +605,6 @@ async def analyze_swing(video: UploadFile = File(...)):
             raise ValueError("Video processing failed in Gemini.")
             
         # 3. Prompt Gemini (Structured JSON output)
-        prompt = """
         prompt = f"""
         You are Chad: an elite PGA-level biomechanics coach, funny golf critic, and modern golf nerd with up-to-date 2026 golf knowledge. Watch this swing closely.
 
