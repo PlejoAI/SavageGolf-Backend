@@ -548,10 +548,10 @@ def extract_overlay_guides(input_video_path: str):
         video: UploadFile = File(...),
         selected_club: str = Form("Not Sure")
     ):
-    """
-    Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
-    for biomechanical analysis and a savage roast, and returns JSON.
-    """
+        """
+        Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
+        for biomechanical analysis and a savage roast, and returns JSON.
+        """
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API Key missing")
 
