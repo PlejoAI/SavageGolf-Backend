@@ -543,35 +543,35 @@ def extract_overlay_guides(input_video_path: str):
         except Exception:
             pass
             
-    @app.post("/api/analyze-swing")
-    async def analyze_swing(
-        video: UploadFile = File(...),
-        selected_club: str = Form("Not Sure")
-    ):
-        """
-        Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
-        for biomechanical analysis and a savage roast, and returns JSON.
-        """
-        if not GEMINI_API_KEY:
-            raise HTTPException(status_code=500, detail="Gemini API Key missing")
+@app.post("/api/analyze-swing")
+async def analyze_swing(
+    video: UploadFile = File(...),
+    selected_club: str = Form("Not Sure")
+):
+    """
+    Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
+    for biomechanical analysis and a savage roast, and returns JSON.
+    """
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="Gemini API Key missing")
 
-        try:
-            import time
-            import os
-            analysis_video_path = None
+    try:
+        import time
+        import os
+        analysis_video_path = None
         
-            # CRITICAL FIX: Ensure static directory exists
-            if not os.path.exists("static"):
-                os.makedirs("static", exist_ok=True)
+        # CRITICAL FIX: Ensure static directory exists
+        if not os.path.exists("static"):
+            os.makedirs("static", exist_ok=True)
             
-            # Create a unique ID for this video
-            file_id = str(uuid.uuid4())
-            temp_video_path = f"static/{file_id}.mp4"
+        # Create a unique ID for this video
+        file_id = str(uuid.uuid4())
+        temp_video_path = f"static/{file_id}.mp4"
         
-            # 1. Save uploaded video to our static folder
-            content = await video.read()
-            with open(temp_video_path, "wb") as f:
-                f.write(content)
+        # 1. Save uploaded video to our static folder
+        content = await video.read()
+        with open(temp_video_path, "wb") as f:
+            f.write(content)
             
         # 1.2 Create a shorter compressed clip for faster AI analysis
         print("Creating short analysis clip...")
