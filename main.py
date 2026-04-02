@@ -622,7 +622,7 @@ async def analyze_swing(video: UploadFile = File(...)):
         3. 'swing_summary': object with 'posture_score' (1-10), 'tempo' (Fast/Smooth/Jerky), 'estimated_outcome' (Slice/Hook/Pure/Push/Pull/Thin/Fat), 'swing_plane' (Over Top/Under/On Plane), 'clubface_angle' (Open/Closed/Square), 'hip_depth' (Maintained/Loss/Thrust).
         4. 'the_good': one thing they genuinely did well.
         5. 'the_critical_flaw': the biggest issue.
-        6. 'personalized_training_plan': array of 1 object. It must have 'drill_name', 'location' (Driving Range / Living Room), 'how_to_do_it' (2 quick steps), and 'what_to_feel' (a specific exaggerated feel).
+        6. 'personalized_training_plan': array of 2 objects. Each must have 'drill_name', 'location' (Driving Range / Living Room), 'how_to_do_it' (2 quick steps), and 'what_to_feel' (a specific exaggerated feel).
         7. 'savage_mode': A 2-sentence verdict. Sentence 1 must be a fresh, funny Chad-style comment. Sentence 2 must briefly explain the biggest biomechanical issue in plain English.
         8. 'fitness_prescription': array of 2 objects. Each must have 'exercise_name', 'sets_and_reps', and 'why_it_helps'.
         9. 'physical_diagnosis': A short, useful explanation of the physical limitation causing the flaw.
