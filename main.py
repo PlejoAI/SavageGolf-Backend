@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -543,8 +543,11 @@ def extract_overlay_guides(input_video_path: str):
         except Exception:
             pass
             
-@app.post("/api/analyze-swing")
-async def analyze_swing(video: UploadFile = File(...)):
+    @app.post("/api/analyze-swing")
+    async def analyze_swing(
+        video: UploadFile = File(...),
+        selected_club: str = Form("Not Sure")
+    ):
     """
     Receives a golf swing video from the app, sends it to Gemini 1.5 Pro/Flash
     for biomechanical analysis and a savage roast, and returns JSON.
