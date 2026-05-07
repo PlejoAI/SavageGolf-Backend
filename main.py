@@ -29,7 +29,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="Savage Golf API", version="1.0.0")
-BACKEND_BUILD = "2026-05-07-caddie-realtime"
+BACKEND_BUILD = "2026-05-07-caddie-realtime-v2"
 
 # CORS for React Native
 app.add_middleware(
@@ -833,33 +833,49 @@ def extract_grounding_sources(candidate: dict):
 
 def ask_caddie_with_google_search(prompt: str):
     """Call Gemini REST with Google Search grounding for realtime caddie answers."""
-    realtime_model = os.getenv("GEMINI_REALTIME_MODEL", "gemini-2.0-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{realtime_model}:generateContent"
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "tools": [{"google_search": {}}],
-        "generationConfig": {
-            "temperature": 0.65,
-            "maxOutputTokens": 700,
-        },
-    }
-    response = requests.post(
-        url,
-        params={"key": GEMINI_API_KEY},
-        headers={"Content-Type": "application/json"},
-        json=payload,
-        timeout=35,
-    )
-    if not response.ok:
-        raise Exception(f"Gemini realtime search failed {response.status_code}: {response.text[:300]}")
+    requested = os.getenv("GEMINI_REALTIME_MODEL")
+    model_names = [name for name in [requested, "gemini-2.5-flash", "gemini-2.0-flash"] if name]
+    tool_variants = [
+        [{"google_search": {}}],
+        [{"google_search_retrieval": {}}],
+    ]
 
-    data = response.json()
-    candidate = (data.get("candidates") or [{}])[0]
-    parts = (((candidate.get("content") or {}).get("parts")) or [])
-    answer = "".join(part.get("text", "") for part in parts).strip()
-    if not answer:
-        raise Exception("Gemini realtime search returned an empty response")
-    return answer, extract_grounding_sources(candidate), realtime_model
+    last_error = None
+    for model_name in model_names:
+        normalized_model = model_name.replace("models/", "")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{normalized_model}:generateContent"
+        for tools in tool_variants:
+            payload = {
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "tools": tools,
+                "generationConfig": {
+                    "temperature": 0.65,
+                    "maxOutputTokens": 700,
+                },
+            }
+            try:
+                response = requests.post(
+                    url,
+                    params={"key": GEMINI_API_KEY},
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                    timeout=35,
+                )
+                if not response.ok:
+                    raise Exception(f"{response.status_code}: {response.text[:300]}")
+
+                data = response.json()
+                candidate = (data.get("candidates") or [{}])[0]
+                parts = (((candidate.get("content") or {}).get("parts")) or [])
+                answer = "".join(part.get("text", "") for part in parts).strip()
+                if not answer:
+                    raise Exception("empty response")
+                return answer, extract_grounding_sources(candidate), normalized_model
+            except Exception as e:
+                last_error = e
+                print(f"Caddie realtime model={normalized_model} tools={tools} failed: {repr(e)}")
+
+    raise Exception(f"Gemini realtime search failed: {str(last_error)}")
 
 @app.post("/api/ask-caddie")
 async def ask_caddie(req: CaddieRequest):
