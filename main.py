@@ -807,25 +807,39 @@ async def ask_caddie(req: CaddieRequest):
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
 
-    try:
-        model_name = os.getenv("GEMINI_TEXT_MODEL", "models/gemini-1.5-flash")
-        model = genai.GenerativeModel(model_name)
-        prompt = f"""
-        You are Chad, the Breaking 90 virtual caddie. Answer the user's golf question clearly and helpfully.
-        Keep the Breaking 90 voice: confident, funny, a little tough-love, but never mean.
-        You can answer golf rules, swing fixes, equipment, course strategy, scoring, and app questions.
-        If the user asks for live/current tournament results and you are not certain, be honest that live search is not connected yet.
-        Keep answers under 180 words unless the user asks for detail.
+    prompt = f"""
+    You are Chad, the Breaking 90 virtual caddie. Answer the user's golf question clearly and helpfully.
+    Keep the Breaking 90 voice: confident, funny, a little tough-love, but never mean.
+    You can answer golf rules, swing fixes, equipment, course strategy, scoring, and app questions.
+    If the user asks for live/current tournament results and you are not certain, be honest that live search is not connected yet.
+    Keep answers under 180 words unless the user asks for detail.
 
-        User question: {question}
-        """
-        response = model.generate_content(prompt)
-        answer = (response.text or "").strip()
-        if not answer:
-            raise ValueError("Gemini returned an empty caddie response")
-        return {"answer": answer}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Caddie failed: {str(e)}")
+    User question: {question}
+    """
+
+    requested_model = os.getenv("GEMINI_TEXT_MODEL")
+    model_names = [name for name in [
+        requested_model,
+        "models/gemini-3-flash-preview",
+        "models/gemini-2.5-flash",
+        "models/gemini-2.0-flash",
+        "gemini-2.0-flash",
+    ] if name]
+
+    last_error = None
+    for model_name in model_names:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            answer = (response.text or "").strip()
+            if not answer:
+                raise ValueError("Gemini returned an empty caddie response")
+            return {"answer": answer, "model": model_name}
+        except Exception as e:
+            last_error = e
+            print(f"Caddie model {model_name} failed: {repr(e)}")
+
+    raise HTTPException(status_code=500, detail=f"Caddie failed: {str(last_error)}")
 
 # OpenAI TTS endpoint for generating audio roasts
 
