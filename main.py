@@ -10,6 +10,7 @@ import tempfile
 import json
 import time
 import uuid
+import mimetypes
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -403,7 +404,7 @@ def create_analysis_clip(video_path, max_seconds=4, target_height=540, target_fp
     target_width = max(2, target_width - (target_width % 2))
     target_height = max(2, target_height - (target_height % 2))
 
-    output_path = video_path.replace(".mp4", "_analysis.mp4")
+    output_path = f"{os.path.splitext(video_path)[0]}_analysis.mp4"
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(output_path, fourcc, target_fps, (target_width, target_height))
 
@@ -684,15 +685,26 @@ async def analyze_swing(video: UploadFile = File(...)):
             
         # Create a unique ID for this video
         file_id = str(uuid.uuid4())
-        temp_video_path = f"static/{file_id}.mp4"
+        guessed_ext = mimetypes.guess_extension(video.content_type or "") or os.path.splitext(video.filename or "")[1] or ".mp4"
+        if guessed_ext == ".qt":
+            guessed_ext = ".mov"
+        temp_video_path = f"static/{file_id}{guessed_ext}"
         
         # 1. Save uploaded video to our static folder
         content = await video.read()
         with open(temp_video_path, "wb") as f:
             f.write(content)
-        # 1.2 Create a shorter compressed clip for faster AI analysis
-        print("Creating short analysis clip...")
-        analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
+        if not content or len(content) < 1024:
+            raise ValueError("Uploaded video file was empty or too small.")
+
+        # 1.2 Create a shorter compressed clip for faster AI analysis.
+        # If browser/iPhone MOV/WEBM codecs beat OpenCV, still send original to Gemini.
+        print(f"Creating short analysis clip from {video.filename} ({video.content_type}), bytes={len(content)}...")
+        try:
+            analysis_video_path = create_analysis_clip(temp_video_path, max_seconds=4, target_height=540, target_fps=8)
+        except Exception as clip_error:
+            print(f"Analysis clip failed, using original upload for Gemini: {repr(clip_error)}")
+            analysis_video_path = temp_video_path
         print("Rendering skeleton + head/tush overlay video...")
         try:
             skeleton_video_path = render_swing_overlay_video(temp_video_path, file_id=file_id)
