@@ -13,6 +13,7 @@ import uuid
 import cv2
 import mediapipe as mp
 import numpy as np
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # Import the new CV module for split-screen
@@ -28,7 +29,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="Savage Golf API", version="1.0.0")
-BACKEND_BUILD = "2026-05-07-caddie-swing-fix"
+BACKEND_BUILD = "2026-05-07-caddie-realtime"
 
 # CORS for React Native
 app.add_middleware(
@@ -797,6 +798,69 @@ async def analyze_swing(video: UploadFile = File(...)):
 class CaddieRequest(BaseModel):
     question: str
 
+def caddie_needs_realtime(question: str) -> bool:
+    """Use grounded Google Search only when the user asks for current/live info."""
+    q = question.lower()
+    realtime_terms = [
+        "today", "tomorrow", "tonight", "this week", "weekend", "currently", "current",
+        "latest", "live", "right now", "now", "weather", "wind", "rain", "forecast",
+        "tee time", "open now", "near me", "nearby", "course conditions", "green fees",
+        "tournament", "leaderboard", "pga", "liv", "lpga", "masters", "us open",
+        "ryder cup", "fedex", "rankings", "news", "odds", "price", "released"
+    ]
+    return any(term in q for term in realtime_terms)
+
+def extract_grounding_sources(candidate: dict):
+    """Pull readable source titles/URLs from Gemini grounding metadata when present."""
+    sources = []
+    metadata = candidate.get("groundingMetadata") or candidate.get("grounding_metadata") or {}
+    chunks = metadata.get("groundingChunks") or metadata.get("grounding_chunks") or []
+    for chunk in chunks:
+        web = chunk.get("web") or {}
+        uri = web.get("uri")
+        if uri:
+            sources.append({"title": web.get("title") or uri, "url": uri})
+
+    # De-dupe while preserving order.
+    seen = set()
+    unique = []
+    for source in sources:
+        if source["url"] in seen:
+            continue
+        seen.add(source["url"])
+        unique.append(source)
+    return unique[:5]
+
+def ask_caddie_with_google_search(prompt: str):
+    """Call Gemini REST with Google Search grounding for realtime caddie answers."""
+    realtime_model = os.getenv("GEMINI_REALTIME_MODEL", "gemini-2.0-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{realtime_model}:generateContent"
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "tools": [{"google_search": {}}],
+        "generationConfig": {
+            "temperature": 0.65,
+            "maxOutputTokens": 700,
+        },
+    }
+    response = requests.post(
+        url,
+        params={"key": GEMINI_API_KEY},
+        headers={"Content-Type": "application/json"},
+        json=payload,
+        timeout=35,
+    )
+    if not response.ok:
+        raise Exception(f"Gemini realtime search failed {response.status_code}: {response.text[:300]}")
+
+    data = response.json()
+    candidate = (data.get("candidates") or [{}])[0]
+    parts = (((candidate.get("content") or {}).get("parts")) or [])
+    answer = "".join(part.get("text", "") for part in parts).strip()
+    if not answer:
+        raise Exception("Gemini realtime search returned an empty response")
+    return answer, extract_grounding_sources(candidate), realtime_model
+
 @app.post("/api/ask-caddie")
 async def ask_caddie(req: CaddieRequest):
     """Answers golf rules, strategy, equipment, and Breaking 90 app questions."""
@@ -807,15 +871,31 @@ async def ask_caddie(req: CaddieRequest):
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
 
+    current_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    realtime_requested = caddie_needs_realtime(question)
+
     prompt = f"""
     You are Chad, the Breaking 90 virtual caddie. Answer the user's golf question clearly and helpfully.
     Keep the Breaking 90 voice: confident, funny, a little tough-love, but never mean.
     You can answer golf rules, swing fixes, equipment, course strategy, scoring, and app questions.
-    If the user asks for live/current tournament results and you are not certain, be honest that live search is not connected yet.
+    Current date/time: {current_utc}.
+    If realtime search/source data is available, use it for current weather, course info, tournament results,
+    equipment prices/releases, and other live facts. If the user asks for local data but does not give a location,
+    ask for their city/course instead of guessing.
     Keep answers under 180 words unless the user asks for detail.
 
     User question: {question}
     """
+
+    if realtime_requested:
+        try:
+            answer, sources, model_name = ask_caddie_with_google_search(prompt)
+            if sources:
+                source_text = "; ".join(source["title"] for source in sources[:3])
+                answer = f"{answer}\n\nSources: {source_text}"
+            return {"answer": answer, "model": model_name, "realtime": True, "sources": sources}
+        except Exception as e:
+            print(f"Caddie realtime search failed, falling back to non-grounded Gemini: {repr(e)}")
 
     requested_model = os.getenv("GEMINI_TEXT_MODEL")
     model_names = [name for name in [
