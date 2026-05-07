@@ -29,7 +29,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="Savage Golf API", version="1.0.0")
-BACKEND_BUILD = "2026-05-07-caddie-realtime-v2"
+BACKEND_BUILD = "2026-05-07-caddie-realtime-v3"
 
 # CORS for React Native
 app.add_middleware(
@@ -810,6 +810,76 @@ def caddie_needs_realtime(question: str) -> bool:
     ]
     return any(term in q for term in realtime_terms)
 
+def caddie_needs_weather(question: str) -> bool:
+    q = question.lower()
+    return any(term in q for term in ["weather", "wind", "rain", "forecast", "temperature", "temp"])
+
+def extract_location_from_question(question: str):
+    """Best-effort location extraction for weather questions without requiring app GPS."""
+    q = question.strip()
+    lower = q.lower()
+    markers = [" near ", " in ", " at ", " for "]
+    for marker in markers:
+        idx = lower.rfind(marker)
+        if idx != -1:
+            loc = q[idx + len(marker):]
+            for cut in [" today", " tomorrow", " tonight", " this ", " right now", " now", "?"]:
+                cut_idx = loc.lower().find(cut)
+                if cut_idx != -1:
+                    loc = loc[:cut_idx]
+            loc = loc.strip(" .,?!")
+            if len(loc) >= 2:
+                return loc
+    return None
+
+def fetch_weather_context(question: str):
+    """Fetch current weather/wind via Open-Meteo for realtime golf advice."""
+    location = extract_location_from_question(question)
+    if not location:
+        return None
+
+    geo = requests.get(
+        "https://geocoding-api.open-meteo.com/v1/search",
+        params={"name": location, "count": 1, "language": "en", "format": "json"},
+        timeout=12,
+    )
+    geo.raise_for_status()
+    matches = (geo.json().get("results") or [])
+    if not matches:
+        return None
+
+    place = matches[0]
+    lat = place.get("latitude")
+    lon = place.get("longitude")
+    weather = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "current": "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+            "temperature_unit": "fahrenheit",
+            "wind_speed_unit": "mph",
+            "precipitation_unit": "inch",
+            "timezone": "auto",
+        },
+        timeout=12,
+    )
+    weather.raise_for_status()
+    current = weather.json().get("current") or {}
+    place_name = ", ".join(str(part) for part in [place.get("name"), place.get("admin1"), place.get("country_code")] if part)
+    return {
+        "source": "Open-Meteo",
+        "location": place_name,
+        "time": current.get("time"),
+        "temperature_f": current.get("temperature_2m"),
+        "humidity_percent": current.get("relative_humidity_2m"),
+        "precipitation_in": current.get("precipitation"),
+        "rain_in": current.get("rain"),
+        "wind_speed_mph": current.get("wind_speed_10m"),
+        "wind_gusts_mph": current.get("wind_gusts_10m"),
+        "wind_direction_degrees": current.get("wind_direction_10m"),
+    }
+
 def extract_grounding_sources(candidate: dict):
     """Pull readable source titles/URLs from Gemini grounding metadata when present."""
     sources = []
@@ -889,6 +959,13 @@ async def ask_caddie(req: CaddieRequest):
 
     current_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     realtime_requested = caddie_needs_realtime(question)
+    live_context = None
+
+    if caddie_needs_weather(question):
+        try:
+            live_context = fetch_weather_context(question)
+        except Exception as e:
+            print(f"Caddie weather lookup failed: {repr(e)}")
 
     prompt = f"""
     You are Chad, the Breaking 90 virtual caddie. Answer the user's golf question clearly and helpfully.
@@ -901,6 +978,15 @@ async def ask_caddie(req: CaddieRequest):
     Keep answers under 180 words unless the user asks for detail.
 
     User question: {question}
+    """
+
+    if live_context:
+        prompt += f"""
+
+    Live realtime weather data from {live_context['source']}:
+    {json.dumps(live_context)}
+    Use this data directly. Translate wind direction/speed into practical club/course advice.
+    Mention that this is live weather data for {live_context['location']}.
     """
 
     if realtime_requested:
@@ -930,7 +1016,9 @@ async def ask_caddie(req: CaddieRequest):
             answer = (response.text or "").strip()
             if not answer:
                 raise ValueError("Gemini returned an empty caddie response")
-            return {"answer": answer, "model": model_name}
+            if live_context:
+                answer = f"{answer}\n\nSource: live weather via {live_context['source']} ({live_context['location']})"
+            return {"answer": answer, "model": model_name, "realtime": bool(live_context)}
         except Exception as e:
             last_error = e
             print(f"Caddie model {model_name} failed: {repr(e)}")
