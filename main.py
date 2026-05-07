@@ -28,6 +28,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="Savage Golf API", version="1.0.0")
+BACKEND_BUILD = "2026-05-07-caddie-swing-fix"
 
 # CORS for React Native
 app.add_middleware(
@@ -43,7 +44,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 def health_check():
-    return {"status": "Savage Golf Backend is LIVE. Ready to roast."}
+    return {"status": "Savage Golf Backend is LIVE. Ready to roast.", "build": BACKEND_BUILD}
+
+@app.get("/api/health")
+def api_health():
+    return {"ok": True, "build": BACKEND_BUILD, "routes": ["/api/analyze-swing", "/api/ask-caddie", "/api/generate-roast-audio"]}
 
 def calculate_angle(a, b, c):
     """Calculates the angle between three points."""
