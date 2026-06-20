@@ -114,6 +114,9 @@ def process_skeleton(video_path):
     # Stable reference lines
     initial_butt_x = None
     initial_head_y = None
+    initial_spine_angle = None
+    initial_nose_px = None
+    initial_hip_mid_x = None
     stance_direction = None # "left" or "right"
 
     with mp_pose.Pose(
@@ -218,6 +221,16 @@ def process_skeleton(video_path):
                         [l_knee.x, l_knee.y]
                     )
 
+                    # Absolute Spine Angle (Shoulder mid to Hip mid)
+                    sh_mid = ((l_sh.x + r_sh.x)/2.0, (l_sh.y + r_sh.y)/2.0)
+                    hip_mid = ((l_hip.x + r_hip.x)/2.0, (l_hip.y + r_hip.y)/2.0)
+                    dy = hip_mid[1] - sh_mid[1]
+                    dx = hip_mid[0] - sh_mid[0]
+                    abs_spine_angle = np.degrees(np.arctan2(dy, dx))
+                    
+                    sh_mid_px = (int(sh_mid[0]*w), int(sh_mid[1]*h))
+                    hip_mid_px = (int(hip_mid[0]*w), int(hip_mid[1]*h))
+
                     # Determine golfer direction once from hand/hip relationship
                     if stance_direction is None:
                         hands_x = l_wr.x
@@ -241,6 +254,11 @@ def process_skeleton(video_path):
 
                         if initial_head_y is None:
                             initial_head_y = int((nose.y * h) - head_offset_px)
+                            
+                        if initial_spine_angle is None:
+                            initial_spine_angle = abs_spine_angle
+                            initial_nose_px = nose_px
+                            initial_hip_mid_x = hip_mid[0]
 
                     # Draw head level line
                     if initial_head_y is not None:
@@ -324,12 +342,35 @@ def process_skeleton(video_path):
                             cv2.LINE_AA
                         )
 
+                    # Draw dynamic spine line (Yellow)
+                    cv2.line(image, sh_mid_px, hip_mid_px, (0, 255, 255), 4)
+
+                    # Head Sway Tracking (The Box)
+                    if initial_nose_px is not None:
+                        box_w, box_h = int(w * 0.05), int(h * 0.04) # Dynamic box size
+                        pt1 = (initial_nose_px[0] - box_w, initial_nose_px[1] - box_h)
+                        pt2 = (initial_nose_px[0] + box_w, initial_nose_px[1] + box_h)
+                        cv2.rectangle(image, pt1, pt2, (255, 0, 255), 3) # Purple head box
+                        
+                        # Check if current nose is outside the box
+                        if abs(nose_px[0] - initial_nose_px[0]) > box_w or abs(nose_px[1] - initial_nose_px[1]) > box_h:
+                            cv2.putText(image, "HEAD SWAY", (nose_px[0] + 30, nose_px[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
+
+                    # Hip Sway Tracking
+                    if initial_hip_mid_x is not None:
+                        hip_shift_px = abs(hip_mid[0] - initial_hip_mid_x) * w
+                        if hip_shift_px > (w * 0.08): # 8% width shift is a sway
+                            cv2.putText(image, "HIP SWAY", (hip_mid_px[0] - 60, hip_mid_px[1] + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2, cv2.LINE_AA)
+
                     # Posture loss visual
-                    if spine_angle > 168:
-                        hip_mid_px = (
-                            int((l_hip_px[0] + r_hip_px[0]) / 2),
-                            int((l_hip_px[1] + r_hip_px[1]) / 2)
-                        )
+                    posture_loss = False
+                    if initial_spine_angle is not None:
+                        if stance_direction == "right" and (abs_spine_angle - initial_spine_angle) > 12:
+                            posture_loss = True
+                        elif stance_direction == "left" and (initial_spine_angle - abs_spine_angle) > 12:
+                            posture_loss = True
+
+                    if posture_loss:
 
                         cv2.circle(image, hip_mid_px, 10, (255, 80, 80), -1)
                         cv2.circle(image, hip_mid_px, 22, (255, 80, 80), 3)
@@ -746,7 +787,7 @@ async def analyze_swing(video: UploadFile = File(...)):
         
         Output ONLY valid JSON containing:
         1. 'detected_club': The name of the club you visually identified (e.g., "7-Iron", "Driver", "Wedge").
-        2. 'step_by_step_analysis': array of 3-4 strings detailing the breakdown.
+        2. 'step_by_step_analysis': array of 5 strings detailing a comprehensive breakdown of every phase: 1) Setup & Grip, 2) Takeaway & Backswing, 3) Transition & Downswing, 4) Impact, and 5) Follow-through. Leave no stone unturned.
         3. 'swing_summary': object with 'posture_score' (1-10), 'tempo' (Fast/Smooth/Jerky), 'estimated_outcome' (Slice/Hook/Pure), 'swing_plane' (Over Top/Under/On Plane), 'clubface_angle' (Open/Closed/Square), 'hip_depth' (Maintained/Loss/Thrust).
         4. 'the_good': one thing they did well.
         5. 'the_critical_flaw': the biggest issue.
@@ -754,6 +795,8 @@ async def analyze_swing(video: UploadFile = File(...)):
         7. 'savage_mode': A 2-sentence verdict. Sentence 1: A witty, punchy roast of their swing. Sentence 2: A clear, educational explanation of exactly what they did wrong biomechanically so they actually learn how to fix it.
         8. 'fitness_prescription': array of 2-3 objects to fix their physical limitations. Each must have 'exercise_name', 'sets_and_reps', and 'why_it_helps'.
         9. 'physical_diagnosis': A witty, brutal explanation of the physical limitation in their body that caused the swing flaw (e.g. tight hips, weak core).
+        10. 'matched_pro': Pick a PGA Tour Pro whose swing archetype or tempo most closely matches this user's swing (e.g. Justin Thomas, Rickie Fowler, Jon Rahm, Rory McIlroy, Scottie Scheffler).
+        11. 'pro_reason': One short sentence explaining WHY their swing reminds you of this pro (e.g. 'You both have a very compact backswing with a bowed wrist at the top').
         
         CRITICAL: Never use double quotes (") inside your string values, use single quotes (') instead so you do not break the JSON format.
         """

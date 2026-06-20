@@ -5,5 +5,5 @@ python-multipart
 python-dotenv
 requests
 opencv-python-headless
-mediapipe==0.10.14
+mediapipe
 numpy
